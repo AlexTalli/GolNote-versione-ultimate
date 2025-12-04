@@ -7,10 +7,13 @@
     "icon": "./assets/images/icon.png",
     "scheme": "notegoal",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.alessandro.notegoal"
+      "bundleIdentifier": "com.alessandro.notegoal",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.alessandro.notegoal"

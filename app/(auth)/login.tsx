@@ -19,7 +19,6 @@ export default function Login() {
   const [showPwd, setShowPwd] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // lock portrait
   useEffect(() => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
   }, []);
@@ -75,7 +74,7 @@ export default function Login() {
         />
       </View>
 
-      {/* Password + occhio */}
+      {/* Password */}
       <View style={s.inputRow}>
         <TextInput
           style={s.inputField}
@@ -122,7 +121,6 @@ const s = StyleSheet.create({
     color: '#111827',
   },
 
-  // wrapper per input + icona (stessa altezza, allineati)
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',

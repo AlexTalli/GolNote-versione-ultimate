@@ -69,7 +69,7 @@ export default function Register() {
         />
       </View>
 
-      {/* Password + occhio */}
+      {/* Password */}
       <View style={rStyles.inputRow}>
         <TextInput
           style={rStyles.inputField}

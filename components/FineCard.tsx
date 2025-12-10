@@ -45,7 +45,7 @@ export function FineCard({
     if (paid) return '#22c55e';
     if (isOverdue) return '#ef4444';
     if (isDueSoon) return '#f59e0b';
-    return '#6b7280';
+    return '#f59e0b';
   };
 
   const StatusIcon = paid ? CheckCircle : (isOverdue ? AlertTriangle : Clock);

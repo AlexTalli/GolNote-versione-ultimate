@@ -9,17 +9,15 @@ import { RoleProvider } from '@/contexts/RoleContext';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { View, ActivityIndicator } from 'react-native';
 
-// Handler globale per come mostrare le notifiche quando l'app è in foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    // vecchio campo, ancora supportato per compat, ma segnato deprecated
-    shouldShowAlert: true,
-    shouldPlaySound: false,
-    shouldSetBadge: false,
-
-    // nuovi campi consigliati su iOS
+    // lo lasciamo false per non usare la cosa deprecata come “alert classico”
+    shouldShowAlert: false,
+    // nuovi flag consigliati (soprattutto iOS)
     shouldShowBanner: true,
     shouldShowList: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
   }),
 });
 

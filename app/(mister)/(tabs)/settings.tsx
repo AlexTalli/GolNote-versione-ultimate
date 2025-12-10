@@ -1,5 +1,6 @@
 // app/(mister)/(tabs)/settings.tsx
-import { ensureNotificationPermission, scheduleWeeklyFinesReminder } from '@/utils/notifications';
+import { scheduleWeeklyFinesReminder } from '@/utils/notifications';
+import { scheduleFineDueNotificationDemo } from '@/utils/notifications';
 import React, { useState, useMemo, useCallback } from 'react';
 import {
   ScrollView,
@@ -321,7 +322,7 @@ export default function MisterSettings() {
           </TouchableOpacity>
         </View>
 
-        {/* Notifiche */}
+{/* Notifiche */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Notifiche</Text>
 
@@ -341,6 +342,22 @@ export default function MisterSettings() {
             </View>
             {enablingWeekly && <ActivityIndicator size="small" color="#3b82f6" />}
           </TouchableOpacity>
+
+          {/* Solo in sviluppo: bottone test notifica a 10s */}
+          {__DEV__ && (
+            <TouchableOpacity
+              style={styles.option}
+              onPress={scheduleFineDueNotificationDemo}
+            >
+              <Bell size={20} color="#22c55e" />
+              <View style={styles.optionContent}>
+                <Text style={styles.optionTitle}>Test notifica (10s)</Text>
+                <Text style={styles.optionDescription}>
+                  Invia una notifica di prova dopo circa 10 secondi.
+                </Text>
+              </View>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Dati applicazione */}

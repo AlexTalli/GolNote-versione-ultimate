@@ -2,7 +2,7 @@
 import * as Notifications from 'expo-notifications';
 
 /* =======================
- *  PERMESSI
+ *  PERMESSI NOTIFICHE
  * ======================= */
 
 export async function ensureNotificationPermission(): Promise<boolean> {
@@ -14,16 +14,23 @@ export async function ensureNotificationPermission(): Promise<boolean> {
     finalStatus = status;
   }
 
-  return finalStatus === 'granted';
+  const granted = finalStatus === 'granted';
+  console.log('[NOTIF] Permission granted?', granted);
+  return granted;
 }
 
 /* =======================
- *  PROMEMORIA SETTIMANALE
+ *  PROMEMORIA SETTIMANALE (LUN 09:00)
  * ======================= */
 
-export async function scheduleWeeklyFinesReminder() {
+export async function scheduleWeeklyFinesReminder(): Promise<boolean> {
   const granted = await ensureNotificationPermission();
-  if (!granted) return false;
+  if (!granted) {
+    console.log('[NOTIF] Cannot schedule weekly reminder: no permission');
+    return false;
+  }
+
+  console.log('[NOTIF] Scheduling weekly reminder: Monday 09:00');
 
   await Notifications.scheduleNotificationAsync({
     content: {
@@ -32,7 +39,8 @@ export async function scheduleWeeklyFinesReminder() {
       data: { type: 'weekly_fines_reminder' },
     },
     trigger: {
-      weekday: 2, // 1 = domenica, 2 = lunedì
+      // 1 = domenica, 2 = lunedì, ...
+      weekday: 2,
       hour: 9,
       minute: 0,
       repeats: true,
@@ -43,31 +51,53 @@ export async function scheduleWeeklyFinesReminder() {
 }
 
 /* =======================
- *  MULTA REALE (giorno prima)
+ *  MULTA: NOTIFICA GIORNO PRIMA (09:00)
  * ======================= */
 
 export async function scheduleFineDueNotification(
-  dueDate: string,     // "YYYY-MM-DD"
+  dueDate: string,     // formato "YYYY-MM-DD"
   playerName?: string,
   teamName?: string
-) {
+): Promise<boolean> {
   const granted = await ensureNotificationPermission();
-  if (!granted) return false;
-
-  const [year, month, day] = dueDate.split('-').map(Number);
-  if (!year || !month || !day) return false;
-
-  const triggerDate = new Date(year, month - 1, day);
-  triggerDate.setDate(triggerDate.getDate() - 1); // giorno prima
-  triggerDate.setHours(9, 0, 0, 0);               // 09:00
-
-  console.log('[NOTIF] Computed trigger date:', triggerDate.toISOString());
-
-  if (triggerDate.getTime() <= Date.now()) {
-    console.log('[NOTIF] Trigger date is in the past — skipping');
+  if (!granted) {
+    console.log('[NOTIF] Cannot schedule fine notification: no permission');
     return false;
   }
 
+  console.log('[NOTIF] scheduleFineDueNotification called with:', {
+    dueDate,
+    playerName,
+    teamName,
+  });
+
+  // Parsiamo la data "2025-12-07" → year, month, day
+  const [year, month, day] = dueDate.split('-').map(Number);
+  if (!year || !month || !day) {
+    console.log('[NOTIF] Invalid dueDate format, expected YYYY-MM-DD');
+    return false;
+  }
+
+  // Data di scadenza (mezzanotte locale)
+  const due = new Date(year, month - 1, day);
+
+  // Giorno prima alle 09:00
+  const triggerDate = new Date(due);
+  triggerDate.setDate(triggerDate.getDate() - 1);
+  triggerDate.setHours(9, 0, 0, 0);
+
+  const now = new Date();
+
+  console.log('[NOTIF] Now:', now.toISOString());
+  console.log('[NOTIF] Computed triggerDate:', triggerDate.toISOString());
+
+  // Se per qualsiasi motivo il trigger è già passato → non schedulo
+  if (triggerDate.getTime() <= now.getTime()) {
+    console.log('[NOTIF] Trigger date is in the past — skipping schedule');
+    return false;
+  }
+
+  // Testo notifica
   let body = 'Hai una multa che scade domani.';
   if (playerName && teamName) {
     body = `${playerName} (${teamName}) ha una multa da saldare che scade domani.`;
@@ -75,7 +105,7 @@ export async function scheduleFineDueNotification(
     body = `${playerName} ha una multa da saldare che scade domani.`;
   }
 
-  await Notifications.scheduleNotificationAsync({
+  const id = await Notifications.scheduleNotificationAsync({
     content: {
       title: '⏰ Multa in scadenza',
       body,
@@ -86,36 +116,18 @@ export async function scheduleFineDueNotification(
         dueDate,
       },
     },
-    trigger: { date: triggerDate } as Notifications.NotificationTriggerInput,
-  });
-
-  console.log('[NOTIF] Fine due notification scheduled at', triggerDate.toISOString());
-  return true;
-}
-
-/* =======================
- *  DEMO (arriva dopo 10 secondi)
- * ======================= */
-
-export async function scheduleFineDueNotificationDemo() {
-  const granted = await ensureNotificationPermission();
-  if (!granted) return false;
-
-  console.log('[NOTIF-DEMO] Scheduling test notification in 10 seconds…');
-
-  const triggerDate = new Date(Date.now() + 10_000); // adesso + 10 secondi
-
-  const id = await Notifications.scheduleNotificationAsync({
-    content: {
-      title: '⏰ Demo multa in scadenza',
-      body: 'Questa è UNA NOTIFICA DI TEST che arriva dopo ~10 secondi.',
-      data: { type: 'fine_due_demo' },
-    },
+    
     trigger: {
       date: triggerDate,
     } as Notifications.NotificationTriggerInput,
   });
 
-  console.log('[NOTIF-DEMO] Scheduled with id:', id, 'at', triggerDate.toISOString());
+  console.log(
+    '[NOTIF] Fine due notification scheduled with id:',
+    id,
+    'at',
+    triggerDate.toISOString()
+  );
+
   return true;
 }

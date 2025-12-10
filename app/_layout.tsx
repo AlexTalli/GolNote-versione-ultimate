@@ -11,9 +11,7 @@ import { View, ActivityIndicator } from 'react-native';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    // lo lasciamo false per non usare la cosa deprecata come “alert classico”
-    shouldShowAlert: false,
-    // nuovi flag consigliati (soprattutto iOS)
+    shouldShowAlert: true,
     shouldShowBanner: true,
     shouldShowList: true,
     shouldPlaySound: false,

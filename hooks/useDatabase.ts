@@ -1,6 +1,8 @@
 // hooks/useDatabase.ts
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import * as Crypto from 'expo-crypto';
+import * as Notifications from 'expo-notifications';
+
 import {
   initDatabase,
   teamsDB,
@@ -8,6 +10,7 @@ import {
   finesDB,
   statsDB,
 } from '@/database/database';
+
 import { useAuth } from '@/contexts/AuthContext';
 
 // -------------------- Core init --------------------
@@ -17,6 +20,7 @@ export const useDatabase = () => {
 
   useEffect(() => {
     let cancelled = false;
+
     (async () => {
       try {
         await initDatabase();
@@ -26,6 +30,7 @@ export const useDatabase = () => {
         if (!cancelled) setError(e);
       }
     })();
+
     return () => {
       cancelled = true;
     };
@@ -35,15 +40,13 @@ export const useDatabase = () => {
 };
 
 // ==================== TEAMS (Mister) ====================
-// 👇 aggiunto `password?` (plain) lato UI; verrà hashata qui
-type TeamInput = { name: string; description: string; color: string; password?: string };
+type TeamInput = {
+  name: string;
+  description: string;
+  color: string;
+  password?: string; // plain, viene hashata qui
+};
 
-/**
- * Carica/gestisce le squadre del mister loggato.
- * Abilita l’hook solo se:
- *  - DB inizializzato
- *  - c’è un utente loggato con role === 'mister'
- */
 export const useTeams = (deps: { enabled?: boolean } = {}) => {
   const { user } = useAuth();
   const ownerUserId = user?.role === 'mister' ? user.id : null;
@@ -73,7 +76,6 @@ export const useTeams = (deps: { enabled?: boolean } = {}) => {
     async (teamData: TeamInput): Promise<boolean> => {
       if (!ownerUserId) return false;
 
-      // Hash password se presente
       const password_hash = teamData.password
         ? await Crypto.digestStringAsync(
             Crypto.CryptoDigestAlgorithm.SHA256,
@@ -85,7 +87,7 @@ export const useTeams = (deps: { enabled?: boolean } = {}) => {
 
       const id = await teamsDB.create(ownerUserId, {
         ...rest,
-        password_hash, // 👈 passa solo l'hash al DB
+        password_hash,
       } as any);
 
       if (id) {
@@ -123,14 +125,7 @@ type PlayerInput = {
   team_id: number;
 };
 
-/**
- * Gestisce i giocatori delle squadre del mister.
- * Se `teamId` è passato, filtra per team; altrimenti tutti i giocatori dell’owner.
- */
-export const usePlayers = (
-  teamId?: number,
-  deps: { enabled?: boolean } = {}
-) => {
+export const usePlayers = (teamId?: number, deps: { enabled?: boolean } = {}) => {
   const { user } = useAuth();
   const ownerUserId = user?.role === 'mister' ? user.id : null;
 
@@ -144,11 +139,15 @@ export const usePlayers = (
       setLoading(false);
       return;
     }
+
     setLoading(true);
     try {
-      const data = teamId
-        ? await playersDB.getByTeam(teamId, ownerUserId)
+      const hasTeam = typeof teamId === 'number' && teamId > 0;
+
+      const data = hasTeam
+        ? await playersDB.getByTeam(teamId!, ownerUserId)
         : await playersDB.getAll(ownerUserId);
+
       setPlayers(data);
     } catch (error) {
       console.error('Error loading players:', error);
@@ -183,7 +182,7 @@ export const usePlayers = (
   useEffect(() => {
     if (enabled) loadPlayers();
     else setLoading(false);
-  }, [enabled, teamId, loadPlayers]);
+  }, [enabled, loadPlayers]);
 
   return { players, loading, addPlayer, deletePlayer, refreshPlayers: loadPlayers };
 };
@@ -205,18 +204,11 @@ export const useFines = (playerId?: number, deps: { enabled?: boolean } = {}) =>
   const { user } = useAuth();
   const ownerUserId = user?.role === 'mister' ? user.id : null;
 
-  // Se c'è un playerId > 0, leggiamo sempre per quel player (screen “multe del giocatore”)
   const readByPlayer = typeof playerId === 'number' && playerId > 0;
-
-  // Solo il mister può mutare
   const canMutate = user?.role === 'mister';
 
   const enabled = useMemo(() => {
-    if (readByPlayer) {
-      // pagina “multe di un giocatore”: basta che sia abilitato e il playerId sia valido
-      return (deps.enabled ?? true) && playerId! > 0;
-    }
-    // pagina “tutte le multe” del mister
+    if (readByPlayer) return (deps.enabled ?? true) && playerId! > 0;
     return (deps.enabled ?? true) && !!ownerUserId;
   }, [deps.enabled, readByPlayer, playerId, ownerUserId]);
 
@@ -228,11 +220,13 @@ export const useFines = (playerId?: number, deps: { enabled?: boolean } = {}) =>
       setLoading(false);
       return;
     }
+
     setLoading(true);
     try {
       const data = readByPlayer
-        ? await finesDB.getByPlayer(playerId!)   // ← sempre per quel player
-        : await finesDB.getAll(ownerUserId!);    // ← tutte le multe del mister
+        ? await finesDB.getByPlayer(playerId!)
+        : await finesDB.getAll(ownerUserId!);
+
       setFines(data);
     } catch (error) {
       console.error('Error loading fines:', error);
@@ -241,19 +235,27 @@ export const useFines = (playerId?: number, deps: { enabled?: boolean } = {}) =>
     }
   }, [enabled, readByPlayer, playerId, ownerUserId]);
 
+  /**
+   * CREA multa → ritorna fineId (serve poi per salvare notification_id).
+   */
   const addFine = useCallback(
-    async (fineData: FineInput): Promise<boolean> => {
-      if (!canMutate || !ownerUserId) return false;       // solo mister
+    async (fineData: FineInput): Promise<number | null> => {
+      if (!canMutate || !ownerUserId) return null;
+
       const id = await finesDB.create(ownerUserId, fineData);
-      if (id) { await loadFines(); return true; }
-      return false;
+      if (id) {
+        await loadFines();
+        return id;
+      }
+      return null;
     },
     [canMutate, ownerUserId, loadFines]
   );
 
   const toggleFinePayment = useCallback(
     async (id: number, isPaid: boolean): Promise<boolean> => {
-      if (!canMutate || !ownerUserId) return false;       // solo mister
+      if (!canMutate || !ownerUserId) return false;
+
       const ok = await finesDB.updatePaymentStatus(ownerUserId, id, isPaid);
       if (ok) await loadFines();
       return ok;
@@ -261,18 +263,46 @@ export const useFines = (playerId?: number, deps: { enabled?: boolean } = {}) =>
     [canMutate, ownerUserId, loadFines]
   );
 
+  /**
+   * DELETE multa:
+   * 1) recupera notification_id
+   * 2) cancella notifica schedulata
+   * 3) pulisce notification_id (opzionale ma utile)
+   * 4) elimina multa dal DB
+   */
   const deleteFine = useCallback(
-    async (id: number): Promise<boolean> => {
-      if (!canMutate || !ownerUserId) return false;       // solo mister
-      const ok = await finesDB.delete(ownerUserId, id);
-      if (ok) await loadFines();
-      return ok;
+    async (fineId: number): Promise<boolean> => {
+      if (!canMutate || !ownerUserId) return false;
+
+      try {
+        const notifId = await finesDB.getNotificationId(ownerUserId, fineId);
+
+        if (notifId) {
+          try {
+            await Notifications.cancelScheduledNotificationAsync(notifId);
+          } catch (e) {
+            // se non esiste più, amen (utente ha tolto notifiche dal sistema ecc.)
+            console.log('[NOTIF] cancel fine notif failed (ignored):', e);
+          }
+
+          // pulizia DB (così non rimane sporcizia se qualcosa va storto dopo)
+          await finesDB.setNotificationId(ownerUserId, fineId, null);
+        }
+
+        const ok = await finesDB.delete(ownerUserId, fineId);
+        if (ok) await loadFines();
+        return ok;
+      } catch (e) {
+        console.error('Error deleting fine (with notif cleanup):', e);
+        return false;
+      }
     },
     [canMutate, ownerUserId, loadFines]
   );
 
   useEffect(() => {
-    if (enabled) loadFines(); else setLoading(false);
+    if (enabled) loadFines();
+    else setLoading(false);
   }, [enabled, loadFines]);
 
   return { fines, loading, addFine, toggleFinePayment, deleteFine, refreshFines: loadFines };
@@ -283,9 +313,9 @@ type DashboardStats = {
   total_teams: number;
   total_players: number;
   active_fines: number;
-  total_amount: number; // pagate + da pagare
-  paid_amount: number;  // già pagate
-  unpaid_amount: number; // da pagare (calcolato)
+  total_amount: number;
+  paid_amount: number;
+  unpaid_amount: number;
 };
 
 export const useDashboardStats = (deps: { enabled?: boolean } = {}) => {
@@ -309,19 +339,21 @@ export const useDashboardStats = (deps: { enabled?: boolean } = {}) => {
       setLoading(false);
       return;
     }
+
     setLoading(true);
     try {
-      // tipizziamo lasco per non litigare con TS
-      const raw: Partial<Record<string, unknown>> = await statsDB.getDashboardStats(ownerUserId ?? undefined);
+      const raw: Partial<Record<string, unknown>> = await statsDB.getDashboardStats(
+        ownerUserId ?? undefined
+      );
 
       const total_amount = Number(raw?.total_amount ?? 0);
-      const paid_amount  = Number(raw?.paid_amount  ?? 0);
-      const unpaid_amount = Math.max(0, total_amount - paid_amount); // <-- calcolato
+      const paid_amount = Number(raw?.paid_amount ?? 0);
+      const unpaid_amount = Math.max(0, total_amount - paid_amount);
 
       setStats({
-        total_teams:   Number(raw?.total_teams   ?? 0),
+        total_teams: Number(raw?.total_teams ?? 0),
         total_players: Number(raw?.total_players ?? 0),
-        active_fines:  Number(raw?.active_fines  ?? 0),
+        active_fines: Number(raw?.active_fines ?? 0),
         total_amount,
         paid_amount,
         unpaid_amount,
@@ -333,7 +365,9 @@ export const useDashboardStats = (deps: { enabled?: boolean } = {}) => {
     }
   }, [enabled, ownerUserId]);
 
-  useEffect(() => { enabled ? loadStats() : setLoading(false); }, [enabled, loadStats]);
+  useEffect(() => {
+    enabled ? loadStats() : setLoading(false);
+  }, [enabled, loadStats]);
 
   return { stats, loading, refreshStats: loadStats };
 };

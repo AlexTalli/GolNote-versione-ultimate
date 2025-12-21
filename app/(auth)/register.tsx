@@ -7,10 +7,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRole } from '@/contexts/RoleContext';
 
 export default function Register() {
+  // Leggi il ruolo dalla route (mister o player) o dal contesto se non presente
   const { role: roleParam } = useLocalSearchParams<{ role?: 'mister' | 'player' }>();
   const { role: roleCtx, setRole, setPlayerIdentity } = useRole();
   const { register, loading } = useAuth();
 
+  // Determina il ruolo finale: prima dalla route, poi dal contesto
   const role = useMemo(() => roleParam ?? roleCtx ?? null, [roleParam, roleCtx]);
 
   const [nickname, setNickname] = useState('');
@@ -43,6 +45,7 @@ export default function Register() {
     router.replace(role === 'mister' ? '/(mister)/(tabs)' : '/(player)/join-team');
   };
 
+  // Se ruolo non valido, mostra messaggio e bottone per tornare indietro
   if (role !== 'mister' && role !== 'player') {
     return (
       <View style={rStyles.container}>

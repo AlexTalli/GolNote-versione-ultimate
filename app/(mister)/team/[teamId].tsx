@@ -21,7 +21,6 @@ import type { Player } from '@/database/database';
 export default function TeamPlayersScreen() {
   const insets = useSafeAreaInsets();
 
-  // 🔥 ORA leggiamo anche il nome della squadra
   const { teamId: teamIdParam, teamName } = useLocalSearchParams<{
     teamId?: string;
     teamName?: string;
@@ -85,6 +84,28 @@ export default function TeamPlayersScreen() {
     [deletePlayer]
   );
 
+const POSITION_ORDER: Record<string, number> = {
+  portiere: 0,
+  difensore: 1,
+  centrocampista: 2,
+  attaccante: 3,
+};
+
+const sortedPlayers = useMemo(() => {
+  return [...players].sort((a, b) => {
+    const posA = POSITION_ORDER[a.position?.toLowerCase()] ?? 99;
+    const posB = POSITION_ORDER[b.position?.toLowerCase()] ?? 99;
+
+    // 1️⃣ Ordine per ruolo
+    if (posA !== posB) {
+      return posA - posB;
+    }
+
+    // 2️⃣ Stesso ruolo → ordine alfabetico per nome
+    return a.name.localeCompare(b.name, 'it', { sensitivity: 'base' });
+  });
+}, [players]);
+
   // gate
   if (!user || user.role !== 'mister') {
     return (
@@ -134,7 +155,7 @@ export default function TeamPlayersScreen() {
             </Text>
           </View>
         ) : (
-          players.map((player: Player) => (
+          sortedPlayers.map((player: Player) => (
             <PlayerCard
               key={String(player.id)}
               player={player}

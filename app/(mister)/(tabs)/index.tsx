@@ -3,13 +3,15 @@ import React, { useMemo, useState, useCallback } from 'react';
 import { ScrollView, Text, View, StyleSheet, RefreshControl } from 'react-native';
 import { DashboardCard } from '@/components/DashboardCard';
 import { useDashboardStats } from '@/hooks/useDatabase';
-import { useAuth } from '@/contexts/AuthContext';   // 👈 IMPORTANTE
+import { useAuth } from '@/contexts/AuthContext';  
 
 export default function MisterDashboard() {
+  // Hook per ottenere statistiche dashboard e funzione refresh
   const { stats, loading, refreshStats } = useDashboardStats();
-  const { user } = useAuth();                      // 👈 nickname disponibile qui
+  const { user } = useAuth();                      
   const [refreshing, setRefreshing] = useState(false);
 
+  // Calcola valori numerici dalle statistiche grezze, assicurando valori sicuri
   const {
     totalTeams,
     totalPlayers,
@@ -23,7 +25,7 @@ export default function MisterDashboard() {
     const activeFines = Number(stats.active_fines || 0);
     const totalAmount = Number(stats.total_amount || 0);
     const paidAmount = Number(stats.paid_amount || 0);
-    const unpaidAmount = Math.max(totalAmount - paidAmount, 0);
+    const unpaidAmount = Math.max(totalAmount - paidAmount, 0); // Evita valori negativi
     return {
       totalTeams,
       totalPlayers,
@@ -34,8 +36,10 @@ export default function MisterDashboard() {
     };
   }, [stats]);
 
+  // Formatta numeri come euro con 2 decimali
   const fmtEuro = (n: number) => `${n.toFixed(2)}€`;
 
+  // Gestore per il pull-to-refresh
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -45,6 +49,7 @@ export default function MisterDashboard() {
     }
   }, [refreshStats]);
 
+  // Mostra caricamento iniziale (non durante refresh)
   if (loading && !refreshing) {
     return (
       <View style={[styles.container, styles.centered]}>
@@ -61,11 +66,12 @@ export default function MisterDashboard() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
       }
     >
-      {/* 👇 TESTO PERSONALIZZATO */}
+      {/* Messaggio di benvenuto con nickname dell'utente */}
       <Text style={styles.welcomeText}>
         Benvenuto, {user?.nickname ?? 'Mister'} !
       </Text>
 
+      {/* Griglia di card statistiche */}
       <View style={styles.statsGrid}>
         <DashboardCard
           title="Squadre"

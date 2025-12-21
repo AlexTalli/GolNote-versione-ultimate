@@ -20,12 +20,13 @@ export default function Teams() {
   const { isInitialized } = useDatabase();
   const { user } = useAuth();
 
-  // carica solo se DB ok e utente è mister
+  // Carica squadre solo se DB è pronto e utente è mister
   const enabled = useMemo(
     () => isInitialized && user?.role === 'mister',
     [isInitialized, user?.role]
   );
 
+  // Hook per gestire squadre: carica, aggiunge, elimina, refresh
   const {
     teams,
     loading,
@@ -37,7 +38,7 @@ export default function Teams() {
   const [modalVisible, setModalVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // 👇 qui gestiamo anche il caso "nome già usato"
+  // Gestisce aggiunta squadra con controllo duplicati
   const handleAddTeam = useCallback(
     async (teamData: {
       name: string;
@@ -45,7 +46,7 @@ export default function Teams() {
       color: string;
       password?: string;
     }) => {
-      const ok = await addTeam(teamData); // ownerUserId gestito dall'hook
+      const ok = await addTeam(teamData); // ownerUserId gestito automaticamente dall'hook
 
       if (!ok) {
         Alert.alert(
@@ -60,12 +61,14 @@ export default function Teams() {
     [addTeam]
   );
 
+  // Gestore pull-to-refresh
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await refreshTeams();
     setRefreshing(false);
   }, [refreshTeams]);
 
+  // Chiede conferma prima di eliminare squadra (cascata su giocatori e multe)
   const askDeleteTeam = useCallback(
     (id: number, name: string) => {
       Alert.alert(
@@ -91,15 +94,16 @@ export default function Teams() {
     [deleteTeam, refreshTeams]
   );
 
-  // gate: non loggato / non mister
+  // Controllo accesso: solo mister può vedere questa schermata
   if (!user || user.role !== 'mister') {
     return (
       <View style={[styles.container, styles.centered]}>
-        <Text>Effettua l’accesso come Mister per gestire le squadre.</Text>
+        <Text>Effettua l'accesso come Mister per gestire le squadre.</Text>
       </View>
     );
   }
 
+  // Mostra caricamento mentre carica squadre
   if (!isInitialized || loading) {
     return (
       <View style={[styles.container, styles.centered]}>
@@ -110,7 +114,7 @@ export default function Teams() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
+      {/* Header con titolo e bottone aggiungi */}
       <View style={styles.header}>
         <Text style={styles.title}>Le tue Squadre</Text>
         <TouchableOpacity style={styles.addButton} onPress={() => setModalVisible(true)}>
@@ -118,7 +122,7 @@ export default function Teams() {
         </TouchableOpacity>
       </View>
 
-      {/* Lista squadre */}
+      {/* Lista squadre o messaggio vuoto */}
       {teams.length === 0 ? (
         <View style={[styles.centered, { padding: 24 }]}>
           <Text style={{ color: '#6b7280' }}>
@@ -152,7 +156,7 @@ export default function Teams() {
         </ScrollView>
       )}
 
-      {/* Modal nuova squadra */}
+      {/* Modal per aggiungere nuova squadra */}
       <AddTeamModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
@@ -162,6 +166,7 @@ export default function Teams() {
   );
 }
 
+// Stili per la schermata squadre
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   header: {

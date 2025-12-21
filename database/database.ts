@@ -46,6 +46,7 @@ export type Fine = {
   is_paid: 0 | 1;
   paid_at?: string | null;
   created_at: string;
+  notification_id?: string | null;
   player_name?: string;
   player_number?: string;
   team_name?: string;
@@ -190,7 +191,7 @@ export const initDatabase = async () => {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
     `);
-
+    
     // Aggiungi colonna owner_user_id se manca
     await db.execAsync(`
       ALTER TABLE teams ADD COLUMN owner_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
@@ -238,6 +239,13 @@ export const initDatabase = async () => {
       );
     `);
 
+    // Aggiungi colonna notification_id se manca
+    await db.execAsync(`
+      ALTER TABLE fines ADD COLUMN notification_id TEXT;
+    `).catch(() => {}); // ignora se già esiste
+
+    await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_fines_notif ON fines(notification_id);`);
+        
     // INDICI
     await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_players_team ON players (team_id);`);
     await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_fines_player ON fines (player_id);`);
@@ -606,7 +614,6 @@ delete: async (ownerId: number, id: number) => {
  *        FINES DB
  * ========================= */
 export const finesDB = {
-  // tutte le multe dei team del mister
   getAll: async (ownerId: number): Promise<Fine[]> => {
     const db = await getDb();
     try {
@@ -631,7 +638,6 @@ export const finesDB = {
     }
   },
 
-  // tutte le multe per un player (lato giocatore)
   getByPlayer: async (playerId: number): Promise<Fine[]> => {
     const db = await getDb();
     try {
@@ -653,7 +659,6 @@ export const finesDB = {
     }
   },
 
-  // crea multa se il player appartiene a team del mister
   create: async (
     ownerId: number,
     fine: { player_id: number; type: string; amount: number; description?: string; due_date: string }
@@ -731,7 +736,6 @@ export const finesDB = {
     }
   },
 
-    // lato player: tutte le multe per un team (read-only)
   getByTeamPublic: async (teamId: number): Promise<Fine[]> => {
     const db = await getDb();
     return await db.getAllAsync<Fine>(
@@ -748,6 +752,47 @@ export const finesDB = {
     );
   },
 
+  // salva notificationId nella multa
+  setNotificationId: async (ownerId: number, fineId: number, notificationId: string | null) => {
+    const db = await getDb();
+    try {
+      await db.runAsync(
+        `
+        UPDATE fines
+        SET notification_id = ?
+        WHERE id = ?
+          AND player_id IN (
+            SELECT p.id
+            FROM players p
+            JOIN teams t ON p.team_id = t.id
+            WHERE t.owner_user_id = ?
+          );
+        `,
+        [notificationId, fineId, ownerId]
+      );
+      return true;
+    } catch (e) {
+      console.error('Error setting fine notification_id:', e);
+      return false;
+    }
+  },
+
+  // recupera notificationId 
+  getNotificationId: async (ownerId: number, fineId: number): Promise<string | null> => {
+    const db = await getDb();
+    const row = await db.getFirstAsync<{ notification_id: string | null }>(
+      `
+      SELECT f.notification_id AS notification_id
+      FROM fines f
+      JOIN players p ON f.player_id = p.id
+      JOIN teams t ON p.team_id = t.id
+      WHERE f.id = ? AND t.owner_user_id = ?
+      LIMIT 1;
+      `,
+      [fineId, ownerId]
+    );
+    return row?.notification_id ?? null;
+  },
 };
 
 // =========================

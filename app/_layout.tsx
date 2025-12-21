@@ -3,7 +3,6 @@ import * as Notifications from 'expo-notifications';
 import 'react-native-reanimated';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { useDatabase } from '@/hooks/useDatabase';
 import { RoleProvider } from '@/contexts/RoleContext';
 import { AuthProvider } from '@/contexts/AuthContext';
@@ -20,7 +19,6 @@ Notifications.setNotificationHandler({
 });
 
 export default function RootLayout() {
-  useFrameworkReady();
   const { isInitialized } = useDatabase();
 
   if (!isInitialized) {
@@ -34,7 +32,7 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <RoleProvider>
-        <Stack screenOptions={{ headerShown: false }}>
+        <Stack screenOptions={{ headerShown: false, gestureEnabled: false }}>
           <Stack.Screen name="+not-found" />
         </Stack>
         <StatusBar style="auto" />

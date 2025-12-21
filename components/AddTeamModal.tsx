@@ -1,3 +1,5 @@
+/* ========== IMPORTAZIONI ========== */
+
 // components/AddTeamModal.tsx
 import { useState, useMemo } from 'react';
 import {
@@ -13,6 +15,9 @@ import {
 } from 'react-native';
 import { X, Eye, EyeOff, Shield, Plus } from 'lucide-react-native';
 
+/* ========== INTERFACCE ========== */
+
+// Interfaccia per le props del modal
 interface AddTeamModalProps {
   visible: boolean;
   onClose: () => void;
@@ -24,7 +29,9 @@ interface AddTeamModalProps {
   }) => void;
 }
 
-/* Palette principale */
+/* ========== PALETTE COLORI ========== */
+
+/* Palette principale con colori base */
 const baseColors = [
   '#000000', 
   '#ef4444', 
@@ -33,7 +40,7 @@ const baseColors = [
   '#22c55e', 
 ];
 
-/* Palette estesa ( nel + ) */
+/* Palette estesa con più sfumature (accessibile dal pulsante +) */
 const extendedPalette = [
   '#fee2e2', '#fecaca', '#fca5a5', '#ef4444', '#b91c1c',
   '#ffedd5', '#fed7aa', '#fdba74', '#fb923c', '#c2410c',
@@ -45,31 +52,45 @@ const extendedPalette = [
   '#e5e7eb', '#9ca3af', '#6b7280', '#1f2937', '#111827',
 ];
 
+/* ========== COMPONENTE ========== */
+
 export function AddTeamModal({ visible, onClose, onSave }: AddTeamModalProps) {
+  /* ========== STATI ========== */
+
+  // Stati per i campi del form
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [selectedColor, setSelectedColor] = useState(baseColors[4]); // default verde
 
+  // Stati per password opzionale
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [showPwd2, setShowPwd2] = useState(false);
 
-  /* 🔥 palette custom */
+  /* Stato per mostrare/nascondere palette colori estesa */
   const [customVisible, setCustomVisible] = useState(false);
 
+  /* ========== VALIDAZIONI ========== */
+
+  // Validazioni password
   const pwdTooShort = password.length > 0 && password.length < 6;
   const pwdMismatch = password.length > 0 && password !== password2;
 
+  // Controllo se il form è valido per salvare
   const canSave = useMemo(() => {
     if (!name.trim()) return false;
     if (pwdTooShort || pwdMismatch) return false;
     return true;
   }, [name, pwdTooShort, pwdMismatch]);
 
+  /* ========== GESTORI EVENTI ========== */
+
+  // Gestisce il salvataggio della squadra
   const handleSave = () => {
     if (!canSave) return;
 
+    // Prepara i dati da salvare
     const payload: {
       name: string;
       description: string;
@@ -87,6 +108,7 @@ export function AddTeamModal({ visible, onClose, onSave }: AddTeamModalProps) {
     resetForm();
   };
 
+  // Resetta tutti i campi del form ai valori iniziali
   const resetForm = () => {
     setName('');
     setDescription('');
@@ -98,10 +120,13 @@ export function AddTeamModal({ visible, onClose, onSave }: AddTeamModalProps) {
     setCustomVisible(false);
   };
 
+  // Gestisce la chiusura del modal (resetta form prima di chiudere)
   const handleClose = () => {
     resetForm();
     onClose();
   };
+
+  /* ========== RENDERING ========== */
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
@@ -110,7 +135,7 @@ export function AddTeamModal({ visible, onClose, onSave }: AddTeamModalProps) {
         style={styles.overlay}
       >
         <View style={styles.modal}>
-          {/* Header */}
+          {/* Header con titolo e bottone chiusura */}
           <View style={styles.header}>
             <View style={styles.titleWrap}>
               <Shield size={18} color="#1f2937" />
@@ -121,9 +146,9 @@ export function AddTeamModal({ visible, onClose, onSave }: AddTeamModalProps) {
             </TouchableOpacity>
           </View>
 
-          {/* Form */}
+          {/* Form con tutti i campi */}
           <View style={styles.form}>
-            {/* Nome */}
+            {/* Campo nome squadra */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Nome Squadra</Text>
               <TextInput
@@ -135,7 +160,7 @@ export function AddTeamModal({ visible, onClose, onSave }: AddTeamModalProps) {
               />
             </View>
 
-            {/* Descrizione */}
+            {/* Campo descrizione opzionale */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Descrizione (opzionale)</Text>
               <TextInput
@@ -147,7 +172,7 @@ export function AddTeamModal({ visible, onClose, onSave }: AddTeamModalProps) {
               />
             </View>
 
-            {/* Colore */}
+            {/* Selettore colore squadra */}
             <View style={styles.inputGroup}>
               <View style={styles.labelRow}>
                 <Text style={styles.label}>Colore Squadra</Text>
@@ -159,6 +184,7 @@ export function AddTeamModal({ visible, onClose, onSave }: AddTeamModalProps) {
                 />
               </View>
 
+              {/* Griglia colori base */}
               <View style={styles.colorGrid}>
                 {baseColors.map((color) => (
                   <TouchableOpacity
@@ -175,7 +201,7 @@ export function AddTeamModal({ visible, onClose, onSave }: AddTeamModalProps) {
                   />
                 ))}
 
-                {/* Pallino + */}
+                {/* Bottone per espandere palette estesa */}
                 <TouchableOpacity
                   style={styles.colorButtonCustom}
                   onPress={() => setCustomVisible(!customVisible)}
@@ -184,7 +210,7 @@ export function AddTeamModal({ visible, onClose, onSave }: AddTeamModalProps) {
                 </TouchableOpacity>
               </View>
 
-              {/* 🎨 Palette custom */}
+              {/* Palette colori estesa (se visibile) */}
               {customVisible && (
                 <View style={styles.customBox}>
                   <Text style={styles.customLabel}>Sfumature disponibili</Text>
@@ -214,7 +240,7 @@ export function AddTeamModal({ visible, onClose, onSave }: AddTeamModalProps) {
               )}
             </View>
 
-            {/* Password */}
+            {/* Campo password opzionale */}
             <View style={styles.inputGroup}>
               <View style={styles.labelRow}>
                 <Text style={styles.label}>Password di accesso (opzionale)</Text>
@@ -238,7 +264,7 @@ export function AddTeamModal({ visible, onClose, onSave }: AddTeamModalProps) {
               )}
             </View>
 
-            {/* Conferma password */}
+            {/* Campo conferma password (solo se password inserita) */}
             {password.length > 0 && (
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Conferma password</Text>
@@ -262,7 +288,7 @@ export function AddTeamModal({ visible, onClose, onSave }: AddTeamModalProps) {
             )}
           </View>
 
-          {/* Actions */}
+          {/* Bottoni azioni: annulla e salva */}
           <View style={styles.actions}>
             <TouchableOpacity style={styles.cancelButton} onPress={handleClose}>
               <Text style={styles.cancelText}>Annulla</Text>
@@ -283,6 +309,7 @@ export function AddTeamModal({ visible, onClose, onSave }: AddTeamModalProps) {
 
 /* ========== STILI ========== */
 
+// Stili per overlay, modal e header
 const styles = StyleSheet.create({
   overlay: {
     flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -298,6 +325,7 @@ const styles = StyleSheet.create({
   titleWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   title: { fontSize: 20, fontWeight: 'bold', color: '#1f2937' },
 
+  // Stili per il form
   form: { gap: 16 },
   inputGroup: { gap: 8 },
   labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -308,6 +336,7 @@ const styles = StyleSheet.create({
     padding: 12, fontSize: 16, backgroundColor: '#f9fafb',
   },
 
+  // Anteprima colore selezionato
   selectedPreview: {
     width: 24,
     height: 24,
@@ -317,12 +346,14 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 
+  // Griglia colori base
   colorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   colorButton: {
     width: 40, height: 40, borderRadius: 20, borderWidth: 3, borderColor: 'transparent',
   },
   selectedColor: { borderColor: '#1f2937' },
 
+  // Bottone per palette estesa
   colorButtonCustom: {
     width: 40, height: 40, borderRadius: 20,
     backgroundColor: '#e5e7eb',
@@ -331,6 +362,7 @@ const styles = StyleSheet.create({
     borderColor: '#d1d5db',
   },
 
+  // Contenitore palette estesa
   customBox: {
     marginTop: 8,
     backgroundColor: '#f3f4f6',
@@ -339,6 +371,7 @@ const styles = StyleSheet.create({
   },
   customLabel: { fontSize: 14, fontWeight: '500', color: '#374151', marginBottom: 4 },
 
+  // Bottoni colori piccoli nella palette estesa
   colorButtonSmall: {
     width: 32,
     height: 32,
@@ -350,6 +383,7 @@ const styles = StyleSheet.create({
     borderColor: '#111827',
   },
 
+  // Riga password con bottone mostra/nascondi
   pwdRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   eyeBtn: {
     width: 44, height: 44, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
@@ -357,6 +391,7 @@ const styles = StyleSheet.create({
   },
   errorText: { color: '#ef4444', fontSize: 12 },
 
+  // Bottoni azioni (annulla/salva)
   actions: { flexDirection: 'row', gap: 12, marginTop: 24 },
   cancelButton: {
     flex: 1, paddingVertical: 12, borderRadius: 8,

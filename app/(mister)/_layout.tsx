@@ -32,12 +32,14 @@ export default function MisterLayout() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack screenOptions={{ headerShown: false, gestureEnabled: false }}>
       {/* Tabs principali */}
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false, gestureEnabled: false }} />
       {/* Dettagli fuori dalle tabs */}
-      <Stack.Screen name="team/[teamId]" options={{ headerShown: false }} />
-      <Stack.Screen name="player/[playerId]/fines" options={{ headerShown: false }} />
+      <Stack.Screen name="team/[teamId]" options={{ headerShown: false, gestureEnabled: false }} />
+      <Stack.Screen name="player/[playerId]/fines" options={{ headerShown: false, gestureEnabled: false }} />
     </Stack>
   );
+
+  
 }

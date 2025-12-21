@@ -1,8 +1,14 @@
-// app/(mister)/(tabs)/settings.tsx
-import { scheduleWeeklyFinesReminder } from '@/utils/notifications';
-import { scheduleFineDueNotificationDemo } from '@/utils/notifications';
-import React, { useState, useMemo, useCallback } from 'react';
+/* ========== IMPORTAZIONI ========== */
+
 import {
+  scheduleWeeklyFinesReminder,
+  disableWeeklyFinesReminder,
+  isWeeklyFinesReminderEnabled,
+  scheduleFineDueNotificationDemo,
+} from '@/utils/notifications';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import {
+  Switch,
   ScrollView,
   Text,
   View,
@@ -34,49 +40,81 @@ import { useTeams } from '@/hooks/useDatabase';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 
+/* ========== COMPONENTE ========== */
+
 export default function MisterSettings() {
+  /* ========== HOOKS E STATI ========== */
+
   const { logout, user } = useAuth();
   const { setRole, setPlayerIdentity } = useRole();
-  const [enablingWeekly, setEnablingWeekly] = useState(false);
 
+  // Stati per le operazioni asincrone
+  const [enablingWeekly, setEnablingWeekly] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [exportPickerVisible, setExportPickerVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const handleEnableWeeklyReminder = async () => {
-  try {
-    setEnablingWeekly(true);
+  // Stati per le notifiche settimanali
+  const [weeklyEnabled, setWeeklyEnabled] = useState(false);
+  const [loadingWeeklyState, setLoadingWeeklyState] = useState(true);
 
-    const ok = await scheduleWeeklyFinesReminder();
-    if (!ok) {
-      Alert.alert(
-        'Notifiche disattivate',
-        'Per ricevere il promemoria settimanale devi abilitare le notifiche nelle impostazioni del dispositivo.'
-      );
-      return;
+  /* ========== EFFETTI ========== */
+
+  // Carica lo stato iniziale del promemoria settimanale
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const enabled = await isWeeklyFinesReminderEnabled();
+        if (mounted) setWeeklyEnabled(enabled);
+      } finally {
+        if (mounted) setLoadingWeeklyState(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  /* ========== GESTORI EVENTI ========== */
+
+  // Gestisce il toggle del promemoria settimanale
+  const handleToggleWeeklyReminder = useCallback(async (next: boolean) => {
+    // ottimistico: muove subito il toggle, ma se fallisce torna indietro
+    setWeeklyEnabled(next);
+
+    try {
+      setEnablingWeekly(true);
+
+      if (next) {
+        const ok = await scheduleWeeklyFinesReminder();
+        if (!ok) {
+          setWeeklyEnabled(false);
+          Alert.alert(
+            'Notifiche disattivate',
+            'Per ricevere il promemoria settimanale devi abilitare le notifiche nelle impostazioni del dispositivo.'
+          );
+          return;
+        }
+      } else {
+        await disableWeeklyFinesReminder();
+      }
+    } catch (e) {
+      console.error('Errore toggle promemoria settimanale:', e);
+      setWeeklyEnabled(!next);
+      Alert.alert('Errore', 'Non è stato possibile aggiornare il promemoria.');
+    } finally {
+      setEnablingWeekly(false);
     }
+  }, []);
 
-    Alert.alert(
-      'Promemoria attivato',
-      'Ogni lunedì riceverai un promemoria delle multe che ancora devono essere saldate.'
-    );
-  } catch (e) {
-    console.error('Errore attivazione promemoria settimanale:', e);
-    Alert.alert('Errore', 'Non è stato possibile attivare il promemoria.');
-  } finally {
-    setEnablingWeekly(false);
-  }
-};
-
-  // carico le squadre del mister per il picker
+  // Hook per caricare le squadre del mister
   const { teams, refreshTeams } = useTeams({
     enabled: user?.role === 'mister' && !!user?.id,
   });
   const hasTeams = useMemo(() => (teams ?? []).length > 0, [teams]);
 
-  // pull-to-refresh alla "Teams"
+  // Pull-to-refresh per aggiornare le squadre
   const onRefresh = useCallback(async () => {
     if (!user?.id) return;
     setRefreshing(true);
@@ -89,7 +127,9 @@ export default function MisterSettings() {
     }
   }, [refreshTeams, user?.id]);
 
-  /* ============= EXPORT CSV (apre il picker) ============= */
+  /* ========== ESPORTAZIONE CSV ========== */
+
+  // Apre il picker per scegliere quale squadra esportare
   const handleExportData = () => {
     if (!user?.id) {
       Alert.alert('Errore', 'Utente non valido.');
@@ -105,7 +145,7 @@ export default function MisterSettings() {
     setExportPickerVisible(true);
   };
 
-  /* ============= ESECUZIONE EXPORT (dopo scelta squadra) ============= */
+  // Esegue l'esportazione effettiva dopo la scelta della squadra
   const doExport = async (teamId?: number, teamName?: string) => {
     if (!user?.id || !user?.nickname) {
       Alert.alert('Errore', 'Utente non valido.');
@@ -122,7 +162,7 @@ export default function MisterSettings() {
       const csv = await buildCsvForMister(user.id, teamId);
       console.log('📄 CSV generated, length:', csv.length);
 
-      // 2) Nome file: Mister-Nickname-gg-mm-aaaa_hh-mm_[Team].csv
+      // 2) Nome file: Mister-Nickname-data_ora_[Team].csv
       const now = new Date();
       const pad = (n: number) => String(n).padStart(2, '0');
       const datePart = `${pad(now.getDate())}-${pad(
@@ -164,7 +204,6 @@ export default function MisterSettings() {
         return;
       }
 
-      // 👉 facciamo partire shareAsync da un nuovo tap (bottone dell'alert)
       Alert.alert('CSV pronto', 'Vuoi condividere il file CSV adesso?', [
         { text: 'Annulla', style: 'cancel' },
         {
@@ -198,7 +237,7 @@ export default function MisterSettings() {
     }
   };
 
-  /* ============= CLEAR DATA (solo dati) ============= */
+  /* ============= CLEAR DATA (dati) ============= */
   const handleClearData = () => {
     if (!user?.id) {
       Alert.alert('Errore', 'Utente non valido.');
@@ -291,6 +330,8 @@ export default function MisterSettings() {
     router.replace('/');
   };
 
+  /* ========== RENDERING ========== */
+
   return (
     <>
       <ScrollView
@@ -299,7 +340,7 @@ export default function MisterSettings() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {/* Esportazione */}
+        {/* Sezione esportazione dati */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Esportazione Dati</Text>
           <TouchableOpacity
@@ -322,34 +363,42 @@ export default function MisterSettings() {
           </TouchableOpacity>
         </View>
 
-{/* Notifiche */}
+        {/* ============= NOTIFICHE ============= */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Notifiche</Text>
 
-          <TouchableOpacity
-            style={styles.option}
-            onPress={handleEnableWeeklyReminder}
-            disabled={enablingWeekly}
-          >
+          <View style={styles.option}>
             <Bell size={20} color="#3b82f6" />
+
             <View style={styles.optionContent}>
               <Text style={styles.optionTitle}>
-                {enablingWeekly ? 'Attivazione promemoria…' : 'Promemoria Multe Settimanale'}
+                Promemoria multe settimanale
               </Text>
               <Text style={styles.optionDescription}>
-                Ricevi ogni lunedì un promemoria delle multe che ancora devono essere saldate.
+                Ricevi un promemoria ogni lunedì alle 09:00 per controllare eventuali multe.
               </Text>
             </View>
-            {enablingWeekly && <ActivityIndicator size="small" color="#3b82f6" />}
-          </TouchableOpacity>
 
-          {/* Solo in sviluppo: bottone test notifica a 10s */}
-          {__DEV__ && (
+            {loadingWeeklyState ? (
+              <ActivityIndicator size="small" color="#3b82f6" />
+            ) : (
+              <Switch
+                value={weeklyEnabled}
+                onValueChange={handleToggleWeeklyReminder}
+                disabled={enablingWeekly}
+                trackColor={{ false: '#e5e7eb', true: '#93c5fd' }}
+                thumbColor={weeklyEnabled ? '#3b82f6' : '#9ca3af'}
+              />
+            )}
+          </View>
+
+          {/* Test notifica (solo in dev) - COMMENTATO PER DISABILITARE */}
+          {/* {__DEV__ && (
             <TouchableOpacity
               style={styles.option}
               onPress={scheduleFineDueNotificationDemo}
             >
-              <Bell size={20} color="#22c55e" />
+              <Bell size={20} color="#f08215ff" />
               <View style={styles.optionContent}>
                 <Text style={styles.optionTitle}>Test notifica (10s)</Text>
                 <Text style={styles.optionDescription}>
@@ -357,10 +406,10 @@ export default function MisterSettings() {
                 </Text>
               </View>
             </TouchableOpacity>
-          )}
+          )} */}
         </View>
 
-        {/* Dati applicazione */}
+        {/* ============= DATI APPLICAZIONE ============= */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Dati Applicazione</Text>
           <TouchableOpacity
@@ -382,7 +431,7 @@ export default function MisterSettings() {
           </TouchableOpacity>
         </View>
 
-        {/* Account */}
+        {/* ============= ACCOUNT ============= */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
 
@@ -419,22 +468,27 @@ export default function MisterSettings() {
           </TouchableOpacity>
         </View>
 
-        {/* Info */}
-        <View style={styles.section}>
+        {/* ============= INFO ============= */}
+        <View style={[styles.section, { marginBottom: 16 }]}>
           <Text style={styles.sectionTitle}>Informazioni</Text>
           <TouchableOpacity style={styles.option}>
             <Info size={20} color="#6b7280" />
             <View style={styles.optionContent}>
-              <Text style={styles.optionTitle}>App Gestione Multe</Text>
+              <Text style={styles.optionTitle}>GolNote – Modalità Mister</Text>
               <Text style={styles.optionDescription}>
-                Versione 1.0.0 - Modalità Mister
+                • Crea e gestisci le tue squadre{"\n"}
+                • Aggiungi i giocatori e assegna le multe{"\n"}
+                • Tieni traccia di pagato / non pagato{"\n"}
+                • Esporta in CSV per condividerlo{"\n"}
+                • Attiva promemoria settimanali{"\n"}
+                • Notifiche sulle scadenze multe (il giorno prima della scadenza)
               </Text>
             </View>
           </TouchableOpacity>
         </View>
       </ScrollView>
 
-      {/* MODAL SCELTA SQUADRA */}
+      {/* ============= SCELTA SQUADRA - ESP. CSV ============= */}
       <Modal
         visible={exportPickerVisible}
         transparent
@@ -494,7 +548,10 @@ export default function MisterSettings() {
 /* ========== STILI ========== */
 
 const styles = StyleSheet.create({
+  // Contenitore principale con sfondo chiaro
   container: { flex: 1, backgroundColor: '#f8fafc' },
+
+  // Sezione con sfondo bianco, bordi arrotondati e ombra
   section: {
     backgroundColor: '#ffffff',
     marginHorizontal: 16,
@@ -506,6 +563,8 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+
+  // Titolo della sezione
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
@@ -513,6 +572,8 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 8,
   },
+
+  // Opzione cliccabile con icona e contenuto
   option: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -520,34 +581,46 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#f3f4f6',
   },
+
+  // Contenuto dell'opzione (titolo e descrizione)
   optionContent: {
     marginLeft: 12,
     flex: 1,
   },
+
+  // Titolo dell'opzione
   optionTitle: {
     fontSize: 16,
     fontWeight: '500',
     color: '#1f2937',
     marginBottom: 4,
   },
+
+  // Descrizione dell'opzione
   optionDescription: {
     fontSize: 14,
     color: '#6b7280',
   },
+
+  // Stile per opzioni pericolose (sfondo rosso chiaro)
   dangerOption: {
     backgroundColor: '#fef2f2',
   },
+
+  // Testo per opzioni pericolose (rosso)
   dangerText: {
     color: '#ef4444',
   },
 
-  // modal export
+  // Overlay scuro per il modal
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
     alignItems: 'center',
   },
+
+  // Contenitore del modal
   modal: {
     width: '88%',
     maxWidth: 420,
@@ -555,30 +628,42 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 18,
   },
+
+  // Titolo del modal
   modalTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: '#111827',
   },
+
+  // Sottotitolo del modal
   modalSubtitle: {
     fontSize: 14,
     color: '#6b7280',
     marginTop: 4,
   },
+
+  // Opzione squadra nel modal
   teamOption: {
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
   },
+
+  // Testo dell'opzione squadra
   teamOptionText: {
     fontSize: 16,
     color: '#111827',
   },
+
+  // Azioni del modal (pulsante annulla)
   modalActions: {
     marginTop: 12,
     flexDirection: 'row',
     justifyContent: 'flex-end',
   },
+
+  // Pulsante annulla del modal
   modalCancel: {
     paddingVertical: 8,
     paddingHorizontal: 16,
@@ -586,6 +671,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#d1d5db',
   },
+
+  // Testo del pulsante annulla
   modalCancelText: {
     fontSize: 14,
     fontWeight: '500',

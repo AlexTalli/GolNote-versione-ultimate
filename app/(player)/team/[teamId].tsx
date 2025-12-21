@@ -1,4 +1,6 @@
-// app/(player)/team/[teamId].tsx
+/* ========== IMPORTAZIONI ========== */
+
+// Importazioni per componenti UI e navigazione
 import {
   View,
   Text,
@@ -10,11 +12,19 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState, useCallback } from 'react';
+
+// Icona per il pulsante indietro
 import { ArrowLeft } from 'lucide-react-native';
+
+// Database per caricare i giocatori
 import { playersDB, Player } from '@/database/database';
+
+// Componente per mostrare la card del giocatore
 import { PlayerCard } from '@/components/PlayerCard';
 
 export default function PlayerTeamScreen() {
+  /* ========== HOOKS E STATI ========== */
+
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
@@ -24,6 +34,8 @@ export default function PlayerTeamScreen() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  /* ========== FUNZIONI DI CARICAMENTO ========== */
 
   const load = useCallback(async () => {
     if (!(teamId > 0)) return;
@@ -49,6 +61,31 @@ export default function PlayerTeamScreen() {
   // nome squadra se disponibile
   const teamName = players[0]?.team_name || 'Squadra';
 
+  const POSITION_ORDER: Record<string, number> = {
+    portiere: 0,
+    difensore: 1,
+    centrocampista: 2,
+    attaccante: 3,
+  };
+
+  const sortedPlayers = useMemo(() => {
+  return [...players].sort((a, b) => {
+    const posA = POSITION_ORDER[a.position?.toLowerCase()] ?? 99;
+    const posB = POSITION_ORDER[b.position?.toLowerCase()] ?? 99;
+
+    // 1️⃣ Ordine per ruolo
+    if (posA !== posB) {
+      return posA - posB;
+    }
+
+    // 2️⃣ Stesso ruolo → ordine alfabetico
+    return a.name.localeCompare(b.name, 'it', { sensitivity: 'base' });
+  });
+}, [players]);
+
+  /* ========== RENDERING ========== */
+
+  // Controllo se teamId è valido
   if (!(teamId > 0)) {
     return (
       <SafeAreaView style={[s.container, s.center]}>
@@ -57,6 +94,7 @@ export default function PlayerTeamScreen() {
     );
   }
 
+  // Schermata di caricamento
   if (loading) {
     return (
       <SafeAreaView style={[s.container, s.center]}>
@@ -67,23 +105,23 @@ export default function PlayerTeamScreen() {
 
   return (
     <SafeAreaView style={s.container} edges={['left', 'right', 'bottom']}>
-      {/* 🔹 HEADER — identico a quello del mister (senza +) */}
+      {/* Header con pulsante indietro e titolo */}
       <View style={[s.header, { paddingTop: Math.max(insets.top, 8) }]}>
-        {/* 🔙 BACK */}
+        {/* Pulsante indietro */}
         <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
           <ArrowLeft size={20} color="#1f2937" />
         </TouchableOpacity>
 
-        {/* 🏷️ TITOLO (nome squadra) */}
+        {/* Titolo con nome squadra */}
         <Text style={s.title} numberOfLines={1}>
           {teamName}
         </Text>
 
-        {/* Spazio vuoto per tenere il titolo centrato come nel mister */}
+        {/* Spazio vuoto per centrare il titolo */}
         <View style={{ width: 44 }} />
       </View>
 
-      {/* LISTA GIOCATORI */}
+      {/* Lista dei giocatori con scroll e refresh */}
       <ScrollView
         style={s.list}
         contentContainerStyle={{ paddingBottom: 24 }}
@@ -98,7 +136,7 @@ export default function PlayerTeamScreen() {
             <Text style={{ color: '#6b7280' }}>Nessun giocatore.</Text>
           </View>
         ) : (
-          players.map((p) => (
+          sortedPlayers.map((p) => (
             <PlayerCard
               key={String(p.id)}
               player={p}
@@ -117,10 +155,13 @@ export default function PlayerTeamScreen() {
 }
 
 const s = StyleSheet.create({
+  /* ========== STILI ========== */
+
+  // Contenitore principale con sfondo bianco
   container: { flex: 1, backgroundColor: '#ffffff' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  // 🔥 Header copiato dallo screen del mister (stesso stile)
+  // Header copiato dallo screen del mister (stesso stile blu)
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -131,6 +172,7 @@ const s = StyleSheet.create({
     borderBottomColor: '#e5e7eb',
   },
 
+  // Pulsante indietro
   backBtn: {
     width: 32,
     height: 32,
@@ -140,6 +182,7 @@ const s = StyleSheet.create({
     marginRight: 8,
   },
 
+  // Titolo centrato
   title: {
     flex: 1,
     fontSize: 20,
@@ -147,8 +190,10 @@ const s = StyleSheet.create({
     color: '#ffffff',
   },
 
+  // Lista dei giocatori
   list: { flex: 1, paddingHorizontal: 16, paddingTop: 16 },
 
+  // Titolo della sezione
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',

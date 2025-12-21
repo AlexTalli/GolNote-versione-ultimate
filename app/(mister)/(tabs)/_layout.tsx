@@ -5,7 +5,7 @@ import { Settings, ChartBar as BarChart3, Shield } from 'lucide-react-native';
 export default function MisterTabLayout() {
   return (
     <Tabs
-      screenOptions={{
+      screenOptions={{// Disabilita swipe back anche per tabs (per sicurezza)
         tabBarActiveTintColor: '#22c55e',
         tabBarInactiveTintColor: '#6b7280',
         tabBarStyle: {

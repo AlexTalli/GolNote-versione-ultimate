@@ -1,3 +1,5 @@
+/* ========== IMPORTAZIONI ========== */
+
 // components/AddFineModal.tsx
 import { useState, useMemo, useEffect } from 'react';
 import {
@@ -15,12 +17,16 @@ import {
 import { X } from 'lucide-react-native';
 import { useDatabase, usePlayers } from '@/hooks/useDatabase';
 
-// Helpers per conversione data europea
+/* ========== HELPERS PER DATE ========== */
+
+// Converte data ISO (YYYY-MM-DD) in formato europeo (DD-MM-YYYY)
 const toEuropeanDate = (isoDate: string) => {
   if (!isoDate) return '';
   const [y, m, d] = isoDate.split('-');
   return `${d}-${m}-${y}`;
 };
+
+// Converte data europea (DD-MM-YYYY) in formato ISO (YYYY-MM-DD)
 const toISODate = (euroDate: string) => {
   const v = euroDate.trim();
   if (!/^\d{2}-\d{2}-\d{4}$/.test(v)) return '';
@@ -28,6 +34,9 @@ const toISODate = (euroDate: string) => {
   return `${y}-${m}-${d}`;
 };
 
+/* ========== INTERFACCIA ========== */
+
+// Props del componente AddFineModal
 interface AddFineModalProps {
   visible: boolean;
   onClose: () => void;
@@ -42,6 +51,9 @@ interface AddFineModalProps {
   presetPlayerId?: number;
 }
 
+/* ========== TIPI PREDEFINITI ========== */
+
+// Tipi di multa disponibili
 const fineTypes = [
   'Linguaggio inappropriato',
   'Ammonizione',
@@ -52,12 +64,18 @@ const fineTypes = [
   'Altro',
 ];
 
+/* ========== COMPONENTE ========== */
+
 export function AddFineModal({ visible, onClose, onSave, presetPlayerId }: AddFineModalProps) {
+  /* ========== HOOKS E DATI ========== */
+
   const { isInitialized } = useDatabase();
 
-  // Carica i giocatori solo se NON ho un player preimpostato
+  // Carica i giocatori solo se non ho un player preimpostato
   const playersEnabled = isInitialized && !presetPlayerId;
   const { players, loading } = usePlayers(undefined, { enabled: playersEnabled });
+
+  /* ========== STATI ========== */
 
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(presetPlayerId ?? null);
   const [selectedType, setSelectedType] = useState(fineTypes[0]);
@@ -67,6 +85,8 @@ export function AddFineModal({ visible, onClose, onSave, presetPlayerId }: AddFi
   const [dueDate, setDueDate] = useState(''); // DD-MM-YYYY
   const [saving, setSaving] = useState(false);
 
+  /* ========== EFFETTI ========== */
+
   // Autoseleziona il primo giocatore quando non c'è preset e la lista è pronta
   useEffect(() => {
     if (!presetPlayerId && playersEnabled && !loading && players.length > 0) {
@@ -74,13 +94,17 @@ export function AddFineModal({ visible, onClose, onSave, presetPlayerId }: AddFi
     }
   }, [presetPlayerId, playersEnabled, loading, players]);
 
+  /* ========== LOGICA ========== */
+
+  // Controlla se il form è valido per salvare
   const canSave = useMemo(() => {
     const a = parseFloat(amount.replace(',', '.'));
-    const dateOk = /^\d{2}-\d{2}-\d{4}$/.test(dueDate.trim()); // ✅ DD-MM-YYYY
+    const dateOk = /^\d{2}-\d{2}-\d{4}$/.test(dueDate.trim()); // DD-MM-YYYY
     const hasType = selectedType !== 'Altro' ? true : customType.trim().length > 0;
     return !!selectedPlayerId && !Number.isNaN(a) && a > 0 && dateOk && hasType;
   }, [selectedPlayerId, amount, dueDate, selectedType, customType]);
 
+  // Resetta tutti i campi del form
   const resetForm = () => {
     setSelectedPlayerId(presetPlayerId ?? null);
     setSelectedType(fineTypes[0]);
@@ -91,31 +115,36 @@ export function AddFineModal({ visible, onClose, onSave, presetPlayerId }: AddFi
     setSaving(false);
   };
 
+  // Imposta data scadenza in giorni futuri
   const setDueDateInDays = (days: number) => {
     const d = new Date();
     d.setDate(d.getDate() + days);
     const iso = d.toISOString().split('T')[0]; // YYYY-MM-DD
-    setDueDate(toEuropeanDate(iso));           // ✅ DD-MM-YYYY
+    setDueDate(toEuropeanDate(iso));           // DD-MM-YYYY
   };
 
+  /* ========== GESTORI EVENTI ========== */
+
+  // Gestisce la chiusura del modal (resetta form)
   const handleClose = () => {
     resetForm();
     onClose();
   };
 
+  // Gestisce il salvataggio della multa
   const handleSave = async () => {
     if (!canSave || saving) return;
     setSaving(true);
 
     const a = parseFloat(amount.replace(',', '.'));
-    const isoDate = toISODate(dueDate); // ✅ converti a ISO per il DB
+    const isoDate = toISODate(dueDate); // converti a ISO per il DB
 
     const payload = {
       player_id: selectedPlayerId as number,
       type: selectedType === 'Altro' ? customType.trim() : selectedType,
       amount: a,
       description: description.trim(),
-      due_date: isoDate, // ✅ YYYY-MM-DD
+      due_date: isoDate, // YYYY-MM-DD
     };
 
     try {
@@ -130,6 +159,8 @@ export function AddFineModal({ visible, onClose, onSave, presetPlayerId }: AddFi
     }
   };
 
+  /* ========== RENDERING ========== */
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.overlay}>
@@ -141,7 +172,7 @@ export function AddFineModal({ visible, onClose, onSave, presetPlayerId }: AddFi
             </TouchableOpacity>
           </View>
 
-          {/* Se non ho un player preimpostato, mostro il picker */}
+          {/* Se non ho un player preimpostato, mostro il picker dei giocatori */}
           {!presetPlayerId && (
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Seleziona Giocatore</Text>
@@ -172,7 +203,7 @@ export function AddFineModal({ visible, onClose, onSave, presetPlayerId }: AddFi
           )}
 
           <ScrollView style={styles.form} showsVerticalScrollIndicator={false}>
-            {/* Tipo */}
+            {/* Campo tipo multa */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Tipo Multa</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.typeScroll}>
@@ -199,7 +230,7 @@ export function AddFineModal({ visible, onClose, onSave, presetPlayerId }: AddFi
               )}
             </View>
 
-            {/* Importo */}
+            {/* Campo importo */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Importo (€)</Text>
               <TextInput
@@ -212,7 +243,7 @@ export function AddFineModal({ visible, onClose, onSave, presetPlayerId }: AddFi
               />
             </View>
 
-            {/* Descrizione */}
+            {/* Campo descrizione opzionale */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Descrizione (opzionale)</Text>
               <TextInput
@@ -226,7 +257,7 @@ export function AddFineModal({ visible, onClose, onSave, presetPlayerId }: AddFi
               />
             </View>
 
-            {/* Scadenza */}
+            {/* Campo data scadenza */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Data Scadenza</Text>
               <View style={styles.dueDateContainer}>
@@ -252,7 +283,7 @@ export function AddFineModal({ visible, onClose, onSave, presetPlayerId }: AddFi
             </View>
           </ScrollView>
 
-          {/* Azioni */}
+          {/* Bottoni azioni: annulla e salva */}
           <View style={styles.actions}>
             <TouchableOpacity style={styles.cancelButton} onPress={handleClose} disabled={saving}>
               <Text style={styles.cancelText}>Annulla</Text>
@@ -271,33 +302,64 @@ export function AddFineModal({ visible, onClose, onSave, presetPlayerId }: AddFi
   );
 }
 
+/* ========== STILI ========== */
+
 const styles = StyleSheet.create({
+  // Overlay scuro dietro il modal
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+
+  // Contenitore principale del modal
   modal: { backgroundColor: '#fff', borderRadius: 16, width: '90%', maxWidth: 400, maxHeight: '85%', padding: 20 },
+
+  // Header con titolo e bottone chiusura
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   title: { fontSize: 20, fontWeight: 'bold', color: '#1f2937' },
+
+  // Area del form scrollabile
   form: { maxHeight: 420 },
+
+  // Gruppo di input con label
   inputGroup: { marginBottom: 16 },
   label: { fontSize: 16, fontWeight: '600', color: '#374151', marginBottom: 8 },
+
+  // Stile base per input di testo
   input: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 8, padding: 12, fontSize: 16, backgroundColor: '#f9fafb' },
+
+  // Textarea per descrizione
   textArea: { height: 80, textAlignVertical: 'top' },
+
+  // Scroll orizzontale per tipi di multa
   typeScroll: { flexDirection: 'row' },
+
+  // Pulsante per tipo multa
   typeButton: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#d1d5db', backgroundColor: '#fff', marginRight: 8 },
   selectedType: { backgroundColor: '#22c55e', borderColor: '#22c55e' },
   typeText: { fontSize: 14, color: '#6b7280' },
   selectedTypeText: { color: '#fff', fontWeight: '600' },
+
+  // Input per tipo custom
   customTypeInput: { marginTop: 8 },
+
+  // Scroll orizzontale per giocatori
   playersScroll: { flexDirection: 'row' },
+
+  // Pulsante giocatore
   playerButton: { alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#d1d5db', backgroundColor: '#fff', marginRight: 8, minWidth: 90 },
   selectedPlayer: { backgroundColor: '#22c55e', borderColor: '#22c55e' },
   playerNumber: { fontSize: 12, fontWeight: 'bold', color: '#6b7280', marginBottom: 2 },
   playerName: { fontSize: 10, color: '#6b7280', textAlign: 'center' },
   selectedPlayerText: { color: '#fff' },
+
+  // Contenitore data scadenza
   dueDateContainer: { gap: 8 },
   dateInput: { flex: 1 },
+
+  // Pulsanti rapidi per date
   quickDateButtons: { flexDirection: 'row', gap: 8 },
   quickDateButton: { backgroundColor: '#f3f4f6', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
   quickDateText: { fontSize: 12, color: '#6b7280', fontWeight: '600' },
+
+  // Bottoni azioni (annulla/salva)
   actions: { flexDirection: 'row', gap: 12, marginTop: 16 },
   cancelButton: { flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: '#d1d5db', alignItems: 'center' },
   cancelText: { fontSize: 16, color: '#6b7280' },

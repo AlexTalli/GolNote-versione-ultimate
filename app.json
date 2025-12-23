@@ -4,24 +4,31 @@
     "slug": "golnote",
     "version": "1.0.0",
     "orientation": "default",
-    "icon": "./assets/images/icon.png",
-    "scheme": "notegoal",
+    "icon": "./assets/images/LogoGolNote.png",
+    "scheme": "golnote",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+
+    "splash": {
+      "image": "./assets/images/LogoGolNote.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#D1D5DB"
+    },
+
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.alessandro.notegoal",
+      "bundleIdentifier": "com.alessandro.golnote",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.alessandro.notegoal"
+      "package": "com.alessandro.golnote"
     },
     "web": {
       "bundler": "metro",
       "output": "single",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/LogoGolNote.png"
     },
     "plugins": [
       "expo-router",

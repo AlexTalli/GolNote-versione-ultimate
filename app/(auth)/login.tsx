@@ -7,47 +7,59 @@ import { Eye, EyeOff } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRole } from '@/contexts/RoleContext';
 
+// Schermata di login per mister o player
 export default function Login() {
+  // Ottieni il ruolo dai parametri URL o dal context
   const { role: roleParam } = useLocalSearchParams<{ role?: 'mister' | 'player' }>();
   const { role: roleCtx, setRole, setPlayerIdentity } = useRole();
   const { login, loading } = useAuth();
 
+  // Determina il ruolo finale (da URL o context)
   const role = useMemo(() => roleParam ?? roleCtx ?? null, [roleParam, roleCtx]);
 
+  // Stati per i campi input
   const [nickname, setNickname] = useState('');
   const [password, setPassword] = useState('');
-  const [showPwd, setShowPwd] = useState(false);
+  const [showPwd, setShowPwd] = useState(false); // Mostra/nascondi password
   const [err, setErr] = useState<string | null>(null);
 
+  // Blocca orientamento in verticale all'avvio
   useEffect(() => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
   }, []);
 
+  // Gestisce il submit del form
   const onSubmit = async () => {
     setErr(null);
 
+    // Controlla ruolo valido
     if (role !== 'mister' && role !== 'player') {
       router.replace('/');
       return;
     }
 
+    // Validazione campi
     if (!nickname.trim() || !password) {
       setErr('Compila tutti i campi');
       return;
     }
 
+    // Tentativo di login
     const e = await login(nickname.trim(), password, role);
     if (e) {
       setErr(e);
       return;
     }
 
+    // Imposta ruolo e identità se necessario
     if (roleCtx !== role) setRole(role);
     if (role === 'player') setPlayerIdentity({ playerId: null });
 
+    // Naviga alla schermata appropriata
     router.replace(role === 'mister' ? '/(mister)/(tabs)' : '/(player)/join-team');
   };
 
+  // Se ruolo non valido, mostra messaggio di errore
   if (role !== 'mister' && role !== 'player') {
     return (
       <View style={s.container}>
@@ -59,11 +71,12 @@ export default function Login() {
     );
   }
 
+  // UI 
   return (
     <View style={s.container}>
       <Text style={s.title}>Accedi</Text>
 
-      {/* Nickname */}
+      {/* Campo Nickname */}
       <View style={s.inputRow}>
         <TextInput
           style={s.inputField}
@@ -74,7 +87,7 @@ export default function Login() {
         />
       </View>
 
-      {/* Password */}
+      {/* Campo Password con toggle visibilità */}
       <View style={s.inputRow}>
         <TextInput
           style={s.inputField}
@@ -89,8 +102,10 @@ export default function Login() {
         </TouchableOpacity>
       </View>
 
+      {/* Messaggio errore */}
       {err ? <Text style={s.err}>{err}</Text> : null}
 
+      {/* Pulsante di submit */}
       <TouchableOpacity
         style={[s.btn, loading && s.btnDisabled]}
         onPress={onSubmit}
@@ -106,29 +121,30 @@ export default function Login() {
   );
 }
 
+// Stili per la UI
 const s = StyleSheet.create({
   container: {
     flex: 1,
     padding: 20,
     justifyContent: 'center',
-    backgroundColor: '#f9fafb',
+    backgroundColor: '#f9fafb', 
   },
   title: {
     fontSize: 22,
     fontWeight: 'bold',
     marginBottom: 24,
     textAlign: 'center',
-    color: '#111827',
+    color: '#111827', 
   },
 
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#d1d5db',
+    borderColor: '#d1d5db', 
     borderRadius: 8,
     paddingHorizontal: 12,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#ffffff', 
     marginBottom: 10,
   },
   inputField: {
@@ -144,22 +160,22 @@ const s = StyleSheet.create({
   },
 
   btn: {
-    backgroundColor: '#22c55e',
+    backgroundColor: '#22c55e', 
     paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 8,
   },
-  btnDisabled: { opacity: 0.6 },
-  btnText: { color: '#ffffff', fontWeight: '600', fontSize: 16 },
+  btnDisabled: { opacity: 0.6 }, 
+  btnText: { color: '#ffffff', fontWeight: '600', fontSize: 16 }, 
 
-  err: { color: '#ef4444', marginTop: 4, marginBottom: 4, textAlign: 'center' },
+  err: { color: '#ef4444', marginTop: 4, marginBottom: 4, textAlign: 'center' }, 
 
   backText: {
     fontSize: 15,
-    color: '#6b7280',
+    color: '#6b7280', 
     marginTop: 16,
-    textDecorationLine: 'underline',
+    textDecorationLine: 'underline', 
     textAlign: 'center',
   },
 });

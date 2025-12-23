@@ -98,7 +98,7 @@ export default function Teams() {
   if (!user || user.role !== 'mister') {
     return (
       <View style={[styles.container, styles.centered]}>
-        <Text>Effettua l'accesso come Mister per gestire le squadre.</Text>
+        <Text>Effettua l&#39;accesso come Mister per gestire le squadre.</Text>
       </View>
     );
   }
@@ -146,7 +146,7 @@ export default function Teams() {
               pathname: '/(mister)/team/[teamId]',
               params: {
                 teamId: String(team.id),
-                teamName: team.name,   // 👈 PASSIAMO IL NOME DELLA SQUADRA
+                teamName: team.name, 
               },
             })
           }

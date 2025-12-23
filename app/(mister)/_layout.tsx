@@ -4,25 +4,30 @@ import { useEffect } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
 
+// Layout per il ruolo "mister" - gestisce autenticazione e navigazione
 export default function MisterLayout() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
+  // Controllo autenticazione e ruolo al mount/cambio
   useEffect(() => {
-    if (loading) return;
+    if (loading) return; // Aspetta caricamento auth
 
     if (!user?.role) {
+      // Nessun ruolo: vai a scelta auth per mister
       router.replace({ pathname: '/(auth)/auth-choice', params: { role: 'mister' } });
       return;
     }
 
     if (user.role !== 'mister') {
+      // Ruolo sbagliato: vai a join-team per player
       router.replace('/(player)/join-team');
       return;
     }
   }, [user, loading, router, pathname]);
 
+  // Mostra loading durante controllo auth
   if (loading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
@@ -31,6 +36,7 @@ export default function MisterLayout() {
     );
   }
 
+  // Navigazione stack per mister
   return (
     <Stack screenOptions={{ headerShown: false, gestureEnabled: false }}>
       {/* Tabs principali */}

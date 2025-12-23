@@ -164,8 +164,8 @@ const sortedPlayers = useMemo(() => {
                   pathname: '/(mister)/player/[playerId]/fines',
                   params: {
                     playerId: String(player.id),
-                    playerName: player.name,                                    // 👈 nome giocatore
-                    teamName: typeof teamName === 'string' ? teamName : undefined, // 👈 nome squadra
+                    playerName: player.name,                                    
+                    teamName: typeof teamName === 'string' ? teamName : undefined,
                   },
                 })
               }

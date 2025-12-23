@@ -17,19 +17,23 @@ import { FineCard } from '@/components/FineCard';
 
 type FilterKind = 'all' | 'pending' | 'paid' | 'overdue';
 
+// Schermata multe per giocatore (solo visualizzazione, no modifica)
 export default function PlayerFinesScreen() {
   const insets = useSafeAreaInsets();
 
+  // Parametro playerId dalla route
   const { playerId: pid } = useLocalSearchParams<{ playerId?: string }>();
   const playerId = useMemo(() => Number(pid ?? -1), [pid]);
 
   const { isInitialized } = useDatabase();
 
+  // Abilita hook solo se DB pronto e playerId valido
   const enabled = useMemo(
     () => isInitialized && playerId > 0,
     [isInitialized, playerId]
   );
 
+  // Hook per multe (solo lettura per player)
   const {
     fines,
     loading,
@@ -39,12 +43,14 @@ export default function PlayerFinesScreen() {
   const [filter, setFilter] = useState<FilterKind>('all');
   const [refreshing, setRefreshing] = useState(false);
 
+  // Pull-to-refresh
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await refreshFines();
     setRefreshing(false);
   }, [refreshFines]);
 
+  // Filtro multe basato su stato pagamento e scadenza
   const filteredFines = useMemo(() => {
     const now = new Date();
     return fines.filter((f: any) => {
@@ -53,23 +59,24 @@ export default function PlayerFinesScreen() {
 
       switch (filter) {
         case 'paid':
-          return isPaid;
+          return isPaid; // Solo pagate
         case 'pending':
-          return !isPaid;
+          return !isPaid; // Solo aperte
         case 'overdue':
           return (
             !isPaid &&
             due instanceof Date &&
             !isNaN(due as any) &&
-            due < now
+            due < now // Aperte e scadute
           );
         case 'all':
         default:
-          return true;
+          return true; // Tutte
       }
     });
   }, [fines, filter]);
 
+  // Loading gate
   if (!enabled || loading) {
     return (
       <SafeAreaView style={[s.container, s.center]} edges={['top', 'right', 'bottom', 'left']}>
@@ -79,25 +86,23 @@ export default function PlayerFinesScreen() {
   }
 
   return (
-    // ⬇️ il top lo gestiamo noi con paddingTop nell'header
+    // SafeArea senza top (gestito da header)
     <SafeAreaView style={s.container} edges={['left', 'right', 'bottom']}>
-      {/* 🔥 HEADER — stesso stile di mister team/fines */}
+      {/* Header con back e titolo */}
       <View style={[s.header, { paddingTop: Math.max(insets.top, 8) }]}>
-        {/* BACK */}
         <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
           <ArrowLeft size={20} color="#1f2937" />
         </TouchableOpacity>
 
-        {/* TITOLO */}
         <Text style={s.title} numberOfLines={1}>
           Multe giocatore
         </Text>
 
-        {/* spazio vuoto per tenere il titolo centrato come nel mister */}
+        {/* Spazio vuoto per centrare titolo */}
         <View style={{ width: 44 }} />
       </View>
 
-      {/* Barra filtro compatta (come mister) */}
+      {/* Barra filtro compatta */}
       <View style={s.filterBar}>
         <Text style={s.filterText}>
           Filtro:{' '}
@@ -127,7 +132,7 @@ export default function PlayerFinesScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Lista */}
+      {/* Lista multe con pull-to-refresh */}
       <ScrollView
         style={s.list}
         contentContainerStyle={{ paddingBottom: 24 }}
@@ -155,7 +160,7 @@ export default function PlayerFinesScreen() {
                 is_paid: !!f.is_paid,
                 description: f.description,
               }}
-              // 👇 lato player: NIENTE toggle / delete
+              // Lato player: nessuna azione (no toggle/delete)
             />
           ))
         )}
@@ -164,11 +169,10 @@ export default function PlayerFinesScreen() {
   );
 }
 
+// Stili simili a mister per consistenza
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#ffffff' },
   center: { justifyContent: 'center', alignItems: 'center', flex: 1 },
-
-  // 🔥 Header uguale a mister (stesso colore, stessa “sensazione” di altezza)
   header: {
     flexDirection: 'row',
     alignItems: 'center',

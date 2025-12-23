@@ -11,7 +11,6 @@ type RoleCtx = {
   setPlayerIdentity: (p: PlayerIdentity) => void;
 };
 
-// default per evitare undefined a livello di typing
 const defaultValue: RoleCtx = {
   role: null,
   setRole: () => {},
@@ -34,6 +33,5 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function useRole() {
-  // Se vuoi forzare che sia usato sotto Provider, puoi reintrodurre il check qui
   return useContext(Ctx);
 }

@@ -13,35 +13,40 @@ import {
 import { Lock, Search, Eye, EyeOff } from 'lucide-react-native';
 import { useTeamSearch, useCheckTeamPassword } from '@/hooks/usePlayerTeam';
 import { useRouter } from 'expo-router';
-import { useAuth } from '@/contexts/AuthContext';  // 👈 IMPORT
+import { useAuth } from '@/contexts/AuthContext'; 
 
+// Schermata per giocatori: cerca e unisciti a una squadra
 export default function JoinTeamScreen() {
   const router = useRouter();
-  const { user } = useAuth(); // 👈 nickname disponibile
-  const { query, setQuery, results, loading } = useTeamSearch();
-  const { verify } = useCheckTeamPassword();
+  const { user } = useAuth(); // nickname 
+  const { query, setQuery, results, loading } = useTeamSearch(); // Hook per ricerca squadre
+  const { verify } = useCheckTeamPassword(); // Hook per verifica password
 
+  // Stati per modal password
   const [pwdModalVisible, setPwdModalVisible] = useState(false);
   const [pwd, setPwd] = useState('');
   const [showPwd, setShowPwd] = useState(false);
 
+  // Squadra selezionata per join
   const [selected, setSelected] = useState<{
     id: number;
     name: string;
     hasPassword: boolean;
   } | null>(null);
-  const [checking, setChecking] = useState(false);
+  const [checking, setChecking] = useState(false); // Loading verifica password
   const [error, setError] = useState<string | null>(null);
 
+  // Naviga ai dettagli squadra
   const goToTeam = (teamId: number) => {
     router.push({ pathname: '/team/[teamId]', params: { teamId: String(teamId) } });
   };
 
+  // Apre modal password o entra direttamente se non protetta
   const openPwd = (team: any) => {
     const hasPassword = !!team.password_hash;
     setSelected({ id: team.id, name: team.name, hasPassword });
     if (!hasPassword) {
-      return goToTeam(team.id);
+      return goToTeam(team.id); // Entra senza password
     }
     setPwd('');
     setShowPwd(false);
@@ -49,6 +54,7 @@ export default function JoinTeamScreen() {
     setPwdModalVisible(true);
   };
 
+  // Chiude modal e reset
   const closePwdModal = () => {
     setPwdModalVisible(false);
     setPwd('');
@@ -56,15 +62,16 @@ export default function JoinTeamScreen() {
     setError(null);
   };
 
+  // Invia password per verifica
   const submitPwd = async () => {
     if (!selected) return;
     setChecking(true);
     setError(null);
-    const ok = await verify(selected.id, pwd, selected.hasPassword);
+    const ok = await verify(selected.id, pwd, selected.hasPassword); // Verifica password
     setChecking(false);
     if (ok) {
       closePwdModal();
-      goToTeam(selected.id);
+      goToTeam(selected.id); // Entra se ok
     } else {
       setError('Password errata. Riprova.');
     }
@@ -72,16 +79,17 @@ export default function JoinTeamScreen() {
 
   return (
     <SafeAreaView style={s.container}>
-      {/* HEADER CENTRATO */}
+      {/* Header */}
       <View style={s.header}>
         
-        {/* 👇 NUOVO TESTO */}
+        {/* Saluto personalizzato con nickname */}
         {user?.nickname && (
           <Text style={s.greeting}>Ciao, {user.nickname} !</Text>
         )}
 
         <Text style={s.title}>Cerca la tua Squadra</Text>
 
+        {/* Campo ricerca squadre */}
         <View style={s.searchWrapper}>
           <View style={s.searchRow}>
             <Search size={18} color="#555960ff" />
@@ -97,7 +105,7 @@ export default function JoinTeamScreen() {
         </View>
       </View>
 
-      {/* RISULTATI / STATO */}
+      {/* Risultati ricerca */}
       {loading ? (
         <View style={s.center}>
           <ActivityIndicator />
@@ -113,29 +121,32 @@ export default function JoinTeamScreen() {
           contentContainerStyle={{ paddingVertical: 12 }}
           renderItem={({ item }) => (
             <TouchableOpacity style={s.teamRow} onPress={() => openPwd(item)}>
+              {/* Punto colore squadra */}
               <View style={[s.colorDot, { backgroundColor: item.color }]} />
               <View style={{ flex: 1 }}>
                 <Text style={s.teamName} numberOfLines={1}>
                   {item.name}
                 </Text>
+                {/* Descrizione opzionale */}
                 {!!item.description && (
                   <Text style={s.teamDesc} numberOfLines={1}>
                     {item.description}
                   </Text>
                 )}
               </View>
+              {/* Icona lucchetto se protetta */}
               {!!item.password_hash && <Lock size={18} color="#6b7280" />}
             </TouchableOpacity>
           )}
         />
       )}
 
-      {/* 🔙 Pulsante per tornare alla selezione ruolo */}
+      {/* Pulsante back alla selezione ruolo */}
       <TouchableOpacity onPress={() => router.replace('/')}>
         <Text style={s.backText}>← Torna alla selezione ruolo</Text>
       </TouchableOpacity>
 
-      {/* Modal password */}
+      {/* Modal per inserire password */}
       <Modal
         visible={pwdModalVisible}
         transparent
@@ -144,9 +155,9 @@ export default function JoinTeamScreen() {
       >
         <View style={s.overlay}>
           <View style={s.modal}>
-            <Text style={s.modalTitle}>Entra in "{selected?.name}"</Text>
+            <Text style={s.modalTitle}>Entra in &#34;{selected?.name}&#34;</Text>
 
-            {/* Campo password con occhio */}
+            {/* Campo password con toggle visibilità */}
             <View style={s.pwdRow}>
               <TextInput
                 style={s.pwdInput}
@@ -167,8 +178,10 @@ export default function JoinTeamScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Messaggio errore */}
             {!!error && <Text style={s.error}>{error}</Text>}
 
+            {/* Pulsanti azione */}
             <View style={s.actions}>
               <TouchableOpacity style={s.btnGhost} onPress={closePwdModal}>
                 <Text style={s.btnGhostText}>Annulla</Text>
@@ -192,6 +205,7 @@ export default function JoinTeamScreen() {
   );
 }
 
+// Stili 
 const s = StyleSheet.create({
   container: {
     flex: 1,
@@ -199,7 +213,6 @@ const s = StyleSheet.create({
     padding: 16,
   },
 
-  // 🔹 BLOCCO TITOLO + SEARCH CENTRATI
   header: {
     alignItems: 'center',
     marginBottom: 12,
@@ -247,6 +260,7 @@ const s = StyleSheet.create({
   empty: { paddingVertical: 24, alignItems: 'center' },
   emptyText: { color: '#6b7280' },
 
+  // Riga squadra
   teamRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -262,6 +276,7 @@ const s = StyleSheet.create({
   teamName: { fontSize: 16, fontWeight: '700', color: '#111827' },
   teamDesc: { fontSize: 12, color: '#6b7280' },
 
+  // Modal overlay
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
@@ -282,7 +297,7 @@ const s = StyleSheet.create({
     marginBottom: 12,
   },
 
-  // password + occhio
+  // Riga password
   pwdRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -304,6 +319,7 @@ const s = StyleSheet.create({
 
   error: { color: '#ef4444', marginTop: 8 },
 
+  // Azioni modal
   actions: {
     flexDirection: 'row',
     gap: 10,

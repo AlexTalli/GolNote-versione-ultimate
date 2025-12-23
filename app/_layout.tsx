@@ -8,6 +8,7 @@ import { RoleProvider } from '@/contexts/RoleContext';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { View, ActivityIndicator } from 'react-native';
 
+// Configurazione notifiche: mostra alert/banner/lista, no suono/badge
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -18,9 +19,11 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// Layout radice dell'app - gestisce bootstrap e providers globali
 export default function RootLayout() {
-  const { isInitialized } = useDatabase();
+  const { isInitialized } = useDatabase(); // Stato inizializzazione DB
 
+  // Mostra loading fino a DB pronto
   if (!isInitialized) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
@@ -29,6 +32,7 @@ export default function RootLayout() {
     );
   }
 
+  // Una volta DB pronto, fornisci contexts e navigazione
   return (
     <AuthProvider>
       <RoleProvider>

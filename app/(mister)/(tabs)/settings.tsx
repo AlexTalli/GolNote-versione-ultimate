@@ -1,5 +1,3 @@
-/* ========== IMPORTAZIONI ========== */
-
 import {
   scheduleWeeklyFinesReminder,
   disableWeeklyFinesReminder,

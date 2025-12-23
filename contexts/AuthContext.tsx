@@ -9,7 +9,7 @@ export type AppUser = { id: number; role: AppRole; nickname: string; playerId?: 
 
 type AuthCtx = {
   user: AppUser | null;
-  loading: boolean;                // loading di auth (login/register/restore)
+  loading: boolean;               
   login: (nickname: string, password: string, role: AppRole) => Promise<string | null>;
   register: (nickname: string, password: string, role: AppRole) => Promise<string | null>;
   logout: () => Promise<void>;
@@ -22,16 +22,13 @@ const Ctx = createContext<AuthCtx | undefined>(undefined);
 
 const SESSION_KEY = '@session:v1';
 
-// Hash “demo” (in prod usa un KDF serio)
 async function hashPassword(password: string) {
   return await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, password);
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
-  const [loading, setLoading] = useState(true);   // parte true: proviamo a ripristinare sessione
-
-  // Ripristino iniziale
+  const [loading, setLoading] = useState(true);  
   useEffect(() => {
     (async () => {
       try {

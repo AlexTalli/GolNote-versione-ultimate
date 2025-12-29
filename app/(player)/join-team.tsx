@@ -127,7 +127,7 @@ export default function JoinTeamScreen() {
                 <Text style={s.teamName} numberOfLines={1}>
                   {item.name}
                 </Text>
-                {/* Descrizione opzionale */}
+                {/* Descrizione se presente */}
                 {!!item.description && (
                   <Text style={s.teamDesc} numberOfLines={1}>
                     {item.description}

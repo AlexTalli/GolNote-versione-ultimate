@@ -1,5 +1,3 @@
-/* ========== IMPORTAZIONI ========== */
-
 // utils/notifications.ts
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -26,13 +24,13 @@ export async function ensureNotificationPermission(): Promise<boolean> {
 
 /* ========== PROMEMORIA SETTIMANALE ========== */
 
-/** Ritorna true se risulta già attivo (abbiamo un ID salvato) */
+/* Ritorna true se risulta già attivo (abbiamo un ID salvato) */
 export async function isWeeklyFinesReminderEnabled(): Promise<boolean> {
   const id = await AsyncStorage.getItem(WEEKLY_ID_KEY);
   return !!id;
 }
 
-/** Disattiva il promemoria settimanale (se presente) */
+/** Disattiva il promemoria settimanale (se attivo) */
 export async function disableWeeklyFinesReminder(): Promise<boolean> {
   const id = await AsyncStorage.getItem(WEEKLY_ID_KEY);
   if (!id) return true;
@@ -70,7 +68,7 @@ export async function scheduleWeeklyFinesReminder(): Promise<boolean> {
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-      weekday: 2, // 1=Sunday, 2=Monday, ... 7=Saturday
+      weekday: 5, // 1=Sunday, 2=Monday, ... 7=Saturday
       hour: 9,
       minute: 0,
     },
@@ -82,7 +80,7 @@ export async function scheduleWeeklyFinesReminder(): Promise<boolean> {
   return true;
 }
 
-/** (Opzionale) Reset pulito: cancella e ricrea */
+/* (Opzionale) Reset pulito: cancella e ricrea */
 export async function rescheduleWeeklyFinesReminder(): Promise<boolean> {
   await disableWeeklyFinesReminder();
   return await scheduleWeeklyFinesReminder();
@@ -143,9 +141,8 @@ export async function scheduleFineDueNotification(
   return notificationId;
 }
 
-/**
+/*
  * Cancella la notifica "multa in scadenza" associata a una multa (se esiste).
- * Da chiamare quando elimini la multa.
  */
 export async function cancelFineDueNotificationByFineId(fineId: number): Promise<boolean> {
   if (!(fineId > 0)) return true;

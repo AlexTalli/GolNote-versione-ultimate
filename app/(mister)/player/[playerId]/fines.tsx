@@ -204,7 +204,7 @@ export default function PlayerFinesScreen() {
 
   return (
     <SafeAreaView style={s.container} edges={['left', 'right', 'bottom']}>
-      {/* HEADER */}
+      {/* Header */}
       <View style={[s.header, { paddingTop: Math.max(insets.top, 8) }]}>
         <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
           <ArrowLeft size={20} color="#1f2937" />
@@ -226,7 +226,7 @@ export default function PlayerFinesScreen() {
         )}
       </View>
 
-      {/* FILTER BAR */}
+      {/* Filter bar */}
       <View style={s.filterBar}>
         <Text style={s.filterText}>
           Filtro:{' '}
@@ -254,7 +254,7 @@ export default function PlayerFinesScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* LIST */}
+      {/* List */}
       <ScrollView
         style={s.list}
         contentContainerStyle={{ paddingBottom: 16 + Math.max(insets.bottom, 8) }}
@@ -289,7 +289,7 @@ export default function PlayerFinesScreen() {
         )}
       </ScrollView>
 
-      {/* MODAL */}
+      {/* Modal */}
       <AddFineModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}

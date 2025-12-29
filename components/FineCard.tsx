@@ -58,7 +58,7 @@ export function FineCard({
   const getStatusColor = () => {
     if (paid) return '#22c55e'; // Verde se pagata
     if (isOverdue) return '#ef4444'; // Rosso se scaduta
-    if (isDueSoon) return '#f59e0b'; // Arancione se in scadenza
+    if (isDueSoon) return '#f5740bff'; // Arancione se in scadenza
     return '#f59e0b'; // Default arancione
   };
 
@@ -132,83 +132,6 @@ export function FineCard({
 }
 
 /* ========== STILI ========== */
-/*
-const styles = StyleSheet.create({
-  // Stile base della card: sfondo bianco, bordi arrotondati, ombra
-  card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-
-  // Stile aggiuntivo per multe scadute: bordo rosso a sinistra
-  overdueCard: { borderLeftWidth: 4, borderLeftColor: '#ef4444' },
-
-  // Header con nome giocatore, tipo multa e pulsanti azioni
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-    gap: 10, // utile per staccare testi/azioni
-  },
-
-    // ✅ importantissimo: flex + minWidth 0
-  titleRow: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 8,
-  },
-  // Testo del nome del giocatore
- playerName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1f2937',
-    maxWidth: '45%', // opzionale: evita che il nome mangi tutto
-  },
-
-  // Testo del tipo di multa
-    fineType: {
-    flex: 1,       // prende lo spazio rimanente
-    minWidth: 0,   // ✅ serve per ellipsize in row
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#374151',
-  },
-
-  // Riga dei pulsanti azioni (stato e cestino)
-  actionsRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-
-  // Stile base per pulsanti icona
-  iconBtn: { padding: 6, borderRadius: 8, backgroundColor: '#f3f4f6' },
-
-  // Stile specifico per pulsante cestino (sfondo rosso chiaro)
-  trashBtn: { backgroundColor: '#fff0f0', borderWidth: 1, borderColor: '#fee2e2' },
-
-  // Testo della descrizione (corsivo)
-  description: { fontSize: 13, color: '#6b7280', fontStyle: 'italic' },
-
-  // Footer con importo e data scadenza
-  footer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
-
-  // Importo della multa (verde, grassetto)
-  amount: { fontSize: 18, fontWeight: 'bold', color: '#22c55e' },
-
-  // Data di scadenza
-  dueDate: { fontSize: 12, color: '#6b7280' },
-
-  // Testo scadenza per multe scadute (rosso, grassetto)
-  overdueText: { color: '#ef4444', fontWeight: '600' },
-}); */
-
 const styles = StyleSheet.create({
   card: {
     backgroundColor: '#ffffff',
@@ -229,16 +152,15 @@ const styles = StyleSheet.create({
 
   header: {
     flexDirection: 'row',
-    alignItems: 'flex-start', // ⬅️ importante: testi in alto, icone allineate bene
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
     marginBottom: 6,
   },
 
-  // ✅ colonna testi
   titleColumn: {
     flex: 1,
-    minWidth: 0, // fondamentale per ellipsis
+    minWidth: 0,
   },
 
   playerName: {
@@ -275,7 +197,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6b7280',
     fontStyle: 'italic',
-    marginTop: 4, // leggero distacco dal titolo
+    marginTop: 4,
   },
 
   footer: {

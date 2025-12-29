@@ -96,12 +96,12 @@ const sortedPlayers = useMemo(() => {
     const posA = POSITION_ORDER[a.position?.toLowerCase()] ?? 99;
     const posB = POSITION_ORDER[b.position?.toLowerCase()] ?? 99;
 
-    // 1️⃣ Ordine per ruolo
+    // 1️Ordine per ruolo
     if (posA !== posB) {
       return posA - posB;
     }
 
-    // 2️⃣ Stesso ruolo → ordine alfabetico per nome
+    // 2️Stesso ruolo → ordine alfabetico per nome
     return a.name.localeCompare(b.name, 'it', { sensitivity: 'base' });
   });
 }, [players]);
@@ -125,7 +125,7 @@ const sortedPlayers = useMemo(() => {
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
-      {/* 🔹 HEADER — Back + Titolo + bottone Aggiungi */}
+      {/* HEADER — Back + Titolo + bottone Aggiungi */}
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 8) }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <ArrowLeft size={20} color="#1f2937" />
@@ -140,7 +140,7 @@ const sortedPlayers = useMemo(() => {
         </TouchableOpacity>
       </View>
 
-      {/* LISTA GIOCATORI */}
+      {/* Player List */}
       <ScrollView
         style={styles.list}
         contentContainerStyle={{ paddingBottom: 24 }}
@@ -175,7 +175,7 @@ const sortedPlayers = useMemo(() => {
         )}
       </ScrollView>
 
-      {/* MODAL AGGIUNTA GIOCATORE */}
+      {/* Modal aggiunta giocatore */}
       <AddPlayerModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}

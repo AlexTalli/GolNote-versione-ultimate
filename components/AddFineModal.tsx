@@ -47,7 +47,7 @@ interface AddFineModalProps {
     description?: string;
     due_date: string; // YYYY-MM-DD
   }) => Promise<boolean> | boolean;
-  /** Se valorizzato, il modal non mostra il picker e usa direttamente questo player */
+  /* Se valorizzato, il modal non mostra il picker e usa direttamente questo player */
   presetPlayerId?: number;
 }
 

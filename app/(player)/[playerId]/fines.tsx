@@ -169,7 +169,7 @@ export default function PlayerFinesScreen() {
   );
 }
 
-// Stili simili a mister per consistenza
+// Stili simili a mister per coerenza UI
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#ffffff' },
   center: { justifyContent: 'center', alignItems: 'center', flex: 1 },

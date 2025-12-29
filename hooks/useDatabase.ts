@@ -44,7 +44,7 @@ type TeamInput = {
   name: string;
   description: string;
   color: string;
-  password?: string; // plain, viene hashata qui
+  password?: string; 
 };
 
 export const useTeams = (deps: { enabled?: boolean } = {}) => {
@@ -236,7 +236,7 @@ export const useFines = (playerId?: number, deps: { enabled?: boolean } = {}) =>
   }, [enabled, readByPlayer, playerId, ownerUserId]);
 
   /**
-   * CREA multa → ritorna fineId (serve poi per salvare notification_id).
+   * CREA multa - ritorna fineId (serve poi per salvare notification_id).
    */
   const addFine = useCallback(
     async (fineData: FineInput): Promise<number | null> => {
@@ -281,11 +281,10 @@ export const useFines = (playerId?: number, deps: { enabled?: boolean } = {}) =>
           try {
             await Notifications.cancelScheduledNotificationAsync(notifId);
           } catch (e) {
-            // se non esiste più, amen (utente ha tolto notifiche dal sistema ecc.)
             console.log('[NOTIF] cancel fine notif failed (ignored):', e);
           }
 
-          // pulizia DB (così non rimane sporcizia se qualcosa va storto dopo)
+          // pulizia DB (così non rimane sporcizia inutilizzata)
           await finesDB.setNotificationId(ownerUserId, fineId, null);
         }
 

@@ -90,7 +90,7 @@ const s = StyleSheet.create({
   // Badge circolare per il numero del giocatore
   numberBadge: {
     width: 44, height: 44, borderRadius: 22,
-    backgroundColor: '#22c55e', // Verde per il numero
+    backgroundColor: '#22c55e',
     alignItems: 'center', justifyContent: 'center',
     marginRight: 12,
   },

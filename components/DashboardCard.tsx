@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { Users, CircleAlert as AlertCircle, Euro, CircleCheck as CheckCircle, Shield } from 'lucide-react-native';
 
+// Interfaccia che definisce le props per il componente DashboardCard
 interface DashboardCardProps {
   title: string;
   value: string;
@@ -8,6 +9,7 @@ interface DashboardCardProps {
   color: string;
 }
 
+// Mappa dei nomi delle icone ai corrispondenti componenti icona di Lucide React Native
 const iconMap = {
   users: Users,
   'alert-circle': AlertCircle,
@@ -16,7 +18,9 @@ const iconMap = {
   shield: Shield,
 };
 
+// Il componente DashboardCard rende una scheda che mostra un'icona, un titolo e un valore
 export function DashboardCard({ title, value, icon, color }: DashboardCardProps) {
+  // Ottieni il componente icona basato sulla prop icon
   const IconComponent = iconMap[icon as keyof typeof iconMap];
 
   return (

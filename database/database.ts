@@ -65,95 +65,21 @@ type AsyncDB = {
 };
 
 /* =========================
- *   ADAPTER LEGACY (WEBSQL)
- * ========================= */
-function makeLegacyAdapter(name: string): AsyncDB {
-  const websql: any = (SQLite as any).openDatabase(name);
-
-  const execAsync: AsyncDB['execAsync'] = (sql, params = []) =>
-    new Promise<void>((resolve, reject) => {
-      websql.transaction(
-        (tx: any) => {
-          tx.executeSql(
-            sql,
-            params,
-            () => {},
-            (_tx: any, err: any) => {
-              reject(err);
-              return false;
-            }
-          );
-        },
-        (err: any) => reject(err),
-        () => resolve()
-      );
-    });
-
-  const runAsync: AsyncDB['runAsync'] = (sql, params = []) =>
-    new Promise<RunResult>((resolve, reject) => {
-      websql.transaction(
-        (tx: any) => {
-          tx.executeSql(
-            sql,
-            params,
-            (_tx: any, res: any) => {
-              resolve({ lastInsertRowId: res?.insertId ?? undefined });
-            },
-            (_tx: any, err: any) => {
-              reject(err);
-              return false;
-            }
-          );
-        },
-        (err: any) => reject(err)
-      );
-    });
-
-  const getAllAsync: AsyncDB['getAllAsync'] = (sql, params = []) =>
-    new Promise<any[]>((resolve, reject) => {
-      websql.transaction(
-        (tx: any) => {
-          tx.executeSql(
-            sql,
-            params,
-            (_tx: any, res: any) => resolve(res?.rows?._array ?? []),
-            (_tx: any, err: any) => {
-              reject(err);
-              return false;
-            }
-          );
-        },
-        (err: any) => reject(err)
-      );
-    });
-
-  const getFirstAsync: AsyncDB['getFirstAsync'] = async (sql, params = []) => {
-    const rows = await getAllAsync(sql, params);
-    return rows[0] ?? null;
-  };
-
-  return { execAsync, runAsync, getAllAsync, getFirstAsync };
-}
-
-/* =========================
  *      DB FACTORY
  * ========================= */
 let dbPromise: Promise<AsyncDB> | null = null;
 
 async function makeDb(): Promise<AsyncDB> {
   const openAsync = (SQLite as any).openDatabaseAsync;
-  const openLegacy = (SQLite as any).openDatabase;
 
-  if (typeof openAsync === 'function') {
-    // API moderna disponibile
-    const db = await openAsync('fines_management.db');
-    return db as AsyncDB;
+  if (typeof openAsync !== 'function') {
+    throw new Error(
+      'openDatabaseAsync non disponibile. Aggiorna Expo/expo-sqlite oppure reinstalla il fallback legacy.'
+    );
   }
-  if (typeof openLegacy === 'function') {
-    // Fallback WebSQL
-    return makeLegacyAdapter('fines_management.db');
-  }
-  throw new Error('expo-sqlite non disponibile: né openDatabaseAsync né openDatabase trovati');
+
+  const db = await openAsync('fines_management.db');
+  return db as AsyncDB;
 }
 
 const getDb = () => (dbPromise ??= makeDb());
@@ -192,13 +118,13 @@ export const initDatabase = async () => {
       );
     `);
     
-    // Aggiungi colonna owner_user_id se manca
+    // Aggiungi colonna owner_user_id
     await db.execAsync(`
       ALTER TABLE teams ADD COLUMN owner_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
     `).catch(() => {}); // ignora se già esiste
     await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_teams_owner ON teams(owner_user_id);`);
 
-    // Aggiungi colonna password_hash se manca
+    // Aggiungi colonna password_hash 
     await db.execAsync(`
       ALTER TABLE teams ADD COLUMN password_hash TEXT;
     `).catch(() => {}); // ignora se già esiste
@@ -239,7 +165,7 @@ export const initDatabase = async () => {
       );
     `);
 
-    // Aggiungi colonna notification_id se manca
+    // Aggiungi colonna notification_id 
     await db.execAsync(`
       ALTER TABLE fines ADD COLUMN notification_id TEXT;
     `).catch(() => {}); // ignora se già esiste
@@ -357,8 +283,6 @@ export const teamsDB = {
     const db = await getDb();
     try {
       const trimmedName = team.name.trim();
-
-      // 🔥 NUOVO: controllo globale, NON più per owner
       const existing = await db.getFirstAsync<{ id: number }>(
         `
         SELECT id
@@ -555,7 +479,7 @@ export const playersDB = {
 delete: async (ownerId: number, id: number) => {
   const db = await getDb();
   try {
-    // 1) Cancello tutte le multe del giocatore, MA solo se appartiene a un team del mister
+    // 1) Cancello tutte le multe del giocatore, solo se appartiene a un team del mister
     await db.runAsync(
       `
       DELETE FROM fines
@@ -569,7 +493,7 @@ delete: async (ownerId: number, id: number) => {
       [id, ownerId]
     );
 
-    // 2) Ora posso cancellare il giocatore in sicurezza
+    // 2) Cancellare il giocatore in sicurezza
     await db.runAsync(
       `
       DELETE FROM players
@@ -800,7 +724,7 @@ export const finesDB = {
 // =========================
 export const buildCsvForMister = async (
   ownerId: number,
-  teamId?: number   // 👈 opzionale: se passato, filtra per squadra
+  teamId?: number  
 ): Promise<string> => {
   const db = await getDb();
 
@@ -872,7 +796,7 @@ export const buildCsvForMister = async (
     return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
   };
 
-  // Intestazione colonne in italiano (senza colore team)
+  // Intestazione colonne in italiano
   const header = [
     'Squadra',
     'Giocatore',
@@ -891,7 +815,7 @@ export const buildCsvForMister = async (
       esc(r.player_name ?? ''),
       esc(r.player_number ?? ''),
       esc(r.type),
-      // importo in formato "12,34"
+      // importo in formato europeo (, come separatore decimale)
       esc(
         typeof r.amount === 'number'
           ? r.amount.toFixed(2).replace('.', ',')
@@ -934,7 +858,6 @@ export const clearAllDataForMister = async (ownerUserId: number): Promise<void> 
   const db = await getDb();
 
   try {
-    // meglio in transazione
     await db.execAsync('BEGIN;');
 
     // 1) cancella tutte le multe dei giocatori dei team del mister

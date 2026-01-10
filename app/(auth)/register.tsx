@@ -1,8 +1,8 @@
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Eye, EyeOff } from 'lucide-react-native';
-
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRole } from '@/contexts/RoleContext';
 
@@ -19,6 +19,11 @@ export default function Register() {
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Blocca orientamento in verticale all'avvio
+  useEffect(() => {
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+  }, []);
 
   const onSubmit = async () => {
     setErr(null);
@@ -44,6 +49,11 @@ export default function Register() {
 
     router.replace(role === 'mister' ? '/(mister)/(tabs)' : '/(player)/join-team');
   };
+
+    // Blocca orientamento in verticale all'avvio
+    useEffect(() => {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+    }, []);
 
   // Se ruolo non valido, mostra messaggio e bottone per tornare indietro
   if (role !== 'mister' && role !== 'player') {

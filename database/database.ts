@@ -1,5 +1,6 @@
 // database/database.ts
 import * as SQLite from 'expo-sqlite';
+import { cancelFineDueNotificationByFineId } from '@/utils/notifications';
 
 /* =========================
  *        TIPI
@@ -313,6 +314,23 @@ export const teamsDB = {
 delete: async (ownerId: number, id: number) => {
   const db = await getDb();
   try {
+    // 0) Recupera ID delle multe per cancellare notifiche
+    const fineIds = await db.getAllAsync<{ id: number }>(
+      `
+      SELECT f.id
+      FROM fines f
+      JOIN players p ON f.player_id = p.id
+      JOIN teams t ON p.team_id = t.id
+      WHERE t.id = ? AND t.owner_user_id = ?
+      `,
+      [id, ownerId]
+    );
+
+    // Cancella notifiche
+    for (const { id: fineId } of fineIds) {
+      await cancelFineDueNotificationByFineId(fineId);
+    }
+
     // 1) Elimina tutte le multe dei giocatori della squadra (solo se la squadra è del mister)
     await db.runAsync(
       `
@@ -479,6 +497,23 @@ export const playersDB = {
 delete: async (ownerId: number, id: number) => {
   const db = await getDb();
   try {
+    // 0) Recupera ID delle multe per cancellare notifiche
+    const fineIds = await db.getAllAsync<{ id: number }>(
+      `
+      SELECT f.id
+      FROM fines f
+      JOIN players p ON f.player_id = p.id
+      JOIN teams t ON p.team_id = t.id
+      WHERE p.id = ? AND t.owner_user_id = ?
+      `,
+      [id, ownerId]
+    );
+
+    // Cancella notifiche
+    for (const { id: fineId } of fineIds) {
+      await cancelFineDueNotificationByFineId(fineId);
+    }
+
     // 1) Cancello tutte le multe del giocatore, solo se appartiene a un team del mister
     await db.runAsync(
       `
@@ -859,6 +894,23 @@ export const clearAllDataForMister = async (ownerUserId: number): Promise<void> 
 
   try {
     await db.execAsync('BEGIN;');
+
+    // 0) Prima recupera tutti gli ID delle multe per cancellare le notifiche
+    const fineIds = await db.getAllAsync<{ id: number }>(
+      `
+      SELECT f.id
+      FROM fines f
+      JOIN players p ON f.player_id = p.id
+      JOIN teams t ON p.team_id = t.id
+      WHERE t.owner_user_id = ?
+      `,
+      [ownerUserId]
+    );
+
+    // Cancella le notifiche per ogni multa
+    for (const { id } of fineIds) {
+      await cancelFineDueNotificationByFineId(id);
+    }
 
     // 1) cancella tutte le multe dei giocatori dei team del mister
     await db.runAsync(

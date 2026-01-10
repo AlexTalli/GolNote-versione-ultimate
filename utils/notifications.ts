@@ -68,7 +68,7 @@ export async function scheduleWeeklyFinesReminder(): Promise<boolean> {
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-      weekday: 5, // 1=Sunday, 2=Monday, ... 7=Saturday
+      weekday: 2, // 1=Sunday, 2=Monday, ... 7=Saturday
       hour: 9,
       minute: 0,
     },

@@ -1,4 +1,3 @@
-// app/(mister)/(tabs)/teams.tsx
 import {
   ScrollView,
   Text,

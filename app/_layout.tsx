@@ -1,4 +1,3 @@
-// app/_layout.tsx
 import * as Notifications from 'expo-notifications';
 import 'react-native-reanimated';
 import { Stack } from 'expo-router';

@@ -1,4 +1,3 @@
-// app/(player)/[playerId]/fines.tsx
 import { useLocalSearchParams, router } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {

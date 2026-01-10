@@ -1,4 +1,3 @@
-// utils/notifications.ts
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 

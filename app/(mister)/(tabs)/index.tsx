@@ -1,4 +1,3 @@
-// app/(mister)/(tabs)/index.tsx
 import React, { useMemo, useState, useCallback } from 'react';
 import { ScrollView, Text, View, StyleSheet, RefreshControl } from 'react-native';
 import { DashboardCard } from '@/components/DashboardCard';

@@ -1,4 +1,3 @@
-// database/database.ts
 import * as SQLite from 'expo-sqlite';
 import { cancelFineDueNotificationByFineId } from '@/utils/notifications';
 

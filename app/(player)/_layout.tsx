@@ -1,4 +1,3 @@
-// app/(player)/_layout.tsx
 import { Stack } from 'expo-router';
 
 // Layout per il ruolo "player" - navigazione semplice senza controlli auth avanzati

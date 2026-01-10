@@ -1,4 +1,3 @@
-// components/AddPlayerModal.tsx
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Modal,

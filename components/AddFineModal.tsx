@@ -1,6 +1,3 @@
-/* ========== IMPORTAZIONI ========== */
-
-// components/AddFineModal.tsx
 import { useState, useMemo, useEffect } from 'react';
 import {
   Modal,

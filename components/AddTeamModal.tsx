@@ -1,6 +1,3 @@
-/* ========== IMPORTAZIONI ========== */
-
-// components/AddTeamModal.tsx
 import { useState, useMemo } from 'react';
 import {
   Modal,

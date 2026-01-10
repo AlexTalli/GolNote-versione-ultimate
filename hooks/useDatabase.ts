@@ -1,4 +1,3 @@
-// hooks/useDatabase.ts
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import * as Crypto from 'expo-crypto';
 import * as Notifications from 'expo-notifications';

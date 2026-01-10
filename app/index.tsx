@@ -1,4 +1,3 @@
-// app/index.tsx
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { Users, UserCheck } from 'lucide-react-native';

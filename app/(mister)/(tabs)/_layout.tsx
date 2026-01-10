@@ -1,4 +1,3 @@
-// app/(mister)/(tabs)/_layout.tsx
 import { Tabs } from 'expo-router';
 import { Settings, ChartBar as BarChart3, Shield } from 'lucide-react-native';
 

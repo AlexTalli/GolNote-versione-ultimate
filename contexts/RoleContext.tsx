@@ -1,4 +1,3 @@
-// contexts/RoleContext.tsx
 import React, { createContext, useContext, useMemo, useState } from 'react';
 
 // Tipi per il ruolo e l'identità del giocatore

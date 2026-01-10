@@ -1,5 +1,3 @@
-/* ========== IMPORTAZIONI ========== */
-
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { ChevronRight, CircleAlert as AlertCircle, Trash2 } from 'lucide-react-native';
 

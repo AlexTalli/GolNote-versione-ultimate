@@ -1,6 +1,3 @@
-/* ========== IMPORTAZIONI ========== */
-
-// components/FineCard.tsx
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import {
   CircleCheck as CheckCircle,

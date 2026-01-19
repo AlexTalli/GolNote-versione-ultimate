@@ -1,19 +1,17 @@
 # App LAM - GolNote
 Un'app Expo React Native per la gestione delle multe in team sportivi, con ruoli separati per mister e giocatori. Utilizza un database SQLite locale per la persistenza dei dati.
 
-
 ## Requisiti
 - **Node.js**: Versione 18 o superiore
 - **Expo CLI**: Installa globalmente con `npm install -g @expo/cli`
 - **Dispositivo di test**:
   - Mobile: Android/iOS device con Expo Go installato
 
-
 ## Installazione
 1. Installa le dipendenze:
    npm install
 
-2.  Installa Expo Go sul tuo dispositivo mobile per test rapidi.
+2.  Installa Expo Go sul dispositivo mobile per test rapidi.
 
 
 ## Avvio in Sviluppo

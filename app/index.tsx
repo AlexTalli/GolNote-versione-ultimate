@@ -21,12 +21,12 @@ export default function RoleSelection() {
       {/* Header con titolo app */}
       <View style={styles.header}>
         <Text style={styles.title}>GolNote</Text>
-        <Text style={styles.subtitle}>Gestionale Multe</Text>
+        <Text style={styles.subtitle}>Gestionale Squadre Sportive</Text>
       </View>
 
       {/* Container selezione ruolo */}
       <View style={styles.roleContainer}>
-        <Text style={styles.roleTitle}>Seleziona il tuo ruolo:</Text>
+        <Text style={styles.roleTitle}>Seleziona il tuo Ruolo:</Text>
 
         {/* Pulsante Mister */}
         <TouchableOpacity
@@ -36,7 +36,7 @@ export default function RoleSelection() {
           <UserCheck size={32} color="#ffffff" /> 
           <Text style={styles.roleButtonText}>Sono il Mister</Text>
           <Text style={styles.roleDescription}>
-            Gestisci giocatori, squadre e multe
+            Gestisci giocatori, squadre, multe e allenamenti della tua squadra
           </Text>
         </TouchableOpacity>
 
@@ -48,14 +48,14 @@ export default function RoleSelection() {
           <Users size={32} color="#ffffff" /> 
           <Text style={styles.roleButtonText}>Sono un Giocatore</Text>
           <Text style={styles.roleDescription}>
-            Visualizza le tue multe e pagamenti della tua squadra
+            Visualizza le multe, pagamenti e presenze agli allenamenti della tua squadra
           </Text>
         </TouchableOpacity>
       </View>
 
       {/* Footer descrittivo */}
       <Text style={styles.footer}>
-        Sviluppato per la gestione delle multe della squadra
+        Sviluppato per la gestione delle squadre sportive, con focus su semplicità e funzionalità per mister e giocatori
       </Text>
     </View>
   );

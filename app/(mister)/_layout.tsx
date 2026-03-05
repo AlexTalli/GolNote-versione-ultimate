@@ -42,6 +42,8 @@ export default function MisterLayout() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false, gestureEnabled: false }} />
       {/* Dettagli fuori dalle tabs */}
       <Stack.Screen name="team/[teamId]" options={{ headerShown: false, gestureEnabled: false }} />
+      <Stack.Screen name="attendance/[teamId]" options={{ headerShown: false, gestureEnabled: false }} />
+      <Stack.Screen name="player-attendance/[teamId]/[playerId]" options={{ headerShown: false, gestureEnabled: false }} />
       <Stack.Screen name="player/[playerId]/fines" options={{ headerShown: false, gestureEnabled: false }} />
     </Stack>
   );

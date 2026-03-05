@@ -7,8 +7,10 @@ import {
   teamsDB,
   playersDB,
   finesDB,
+  trainingDB,
   statsDB,
 } from '@/database/database';
+import type { AttendanceStatus, TeamAttendanceRow, PlayerAttendanceSummary, PlayerAttendanceHistory } from '@/database/database';
 
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -306,6 +308,169 @@ export const useFines = (playerId?: number, deps: { enabled?: boolean } = {}) =>
   return { fines, loading, addFine, toggleFinePayment, deleteFine, refreshFines: loadFines };
 };
 
+// ==================== ATTENDANCE (Mister) ====================
+export const useTeamAttendance = (
+  teamId?: number,
+  sessionDate?: string,
+  deps: { enabled?: boolean } = {}
+) => {
+  const { user } = useAuth();
+  const ownerUserId = user?.role === 'mister' ? user.id : null;
+
+  const enabled =
+    (deps.enabled ?? true) &&
+    !!ownerUserId &&
+    typeof teamId === 'number' &&
+    teamId > 0 &&
+    !!sessionDate;
+
+  const [rows, setRows] = useState<TeamAttendanceRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadAttendance = useCallback(async () => {
+    if (!enabled || !ownerUserId || !teamId || !sessionDate) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const data = await trainingDB.getTeamAttendanceByDate(ownerUserId, teamId, sessionDate);
+      setRows(data);
+    } catch (error) {
+      console.error('Error loading attendance:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [enabled, ownerUserId, teamId, sessionDate]);
+
+  const setPlayerAttendance = useCallback(
+    async (playerId: number, status: AttendanceStatus): Promise<boolean> => {
+      if (!enabled || !ownerUserId || !teamId || !sessionDate) return false;
+
+      const ok = await trainingDB.setPlayerAttendance(ownerUserId, {
+        team_id: teamId,
+        session_date: sessionDate,
+        player_id: playerId,
+        status,
+      });
+
+      if (ok) await loadAttendance();
+      return ok;
+    },
+    [enabled, ownerUserId, teamId, sessionDate, loadAttendance]
+  );
+
+  useEffect(() => {
+    if (enabled) loadAttendance();
+    else setLoading(false);
+  }, [enabled, loadAttendance]);
+
+  return { rows, loading, setPlayerAttendance, refreshAttendance: loadAttendance };
+};
+
+export const useTeamAttendancePublic = (
+  teamId?: number,
+  sessionDate?: string,
+  deps: { enabled?: boolean } = {}
+) => {
+  const enabled =
+    (deps.enabled ?? true) &&
+    typeof teamId === 'number' &&
+    teamId > 0 &&
+    !!sessionDate;
+
+  const [rows, setRows] = useState<TeamAttendanceRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadAttendance = useCallback(async () => {
+    if (!enabled || !teamId || !sessionDate) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const data = await trainingDB.getTeamAttendanceByDatePublic(teamId, sessionDate);
+      setRows(data);
+    } catch (error) {
+      console.error('Error loading public attendance:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [enabled, teamId, sessionDate]);
+
+  useEffect(() => {
+    if (enabled) loadAttendance();
+    else setLoading(false);
+  }, [enabled, loadAttendance]);
+
+  return { rows, loading, refreshAttendance: loadAttendance };
+};
+
+export const usePlayerAttendanceSummary = (teamId?: number, playerId?: number) => {
+  const [summary, setSummary] = useState<PlayerAttendanceSummary>({
+    present: 0,
+    injured: 0,
+    absent_justified: 0,
+    absent_unjustified: 0,
+    sick: 0,
+    total_sessions: 0,
+  });
+  const [loading, setLoading] = useState(false);
+
+  const loadSummary = useCallback(async () => {
+    if (!teamId || teamId <= 0 || !playerId || playerId <= 0) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const data = await trainingDB.getPlayerAttendanceSummary(teamId, playerId);
+      setSummary(data);
+    } catch (error) {
+      console.error('Error loading player attendance summary:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [teamId, playerId]);
+
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
+
+  return { summary, loading, refreshSummary: loadSummary };
+};
+
+export const usePlayerAttendanceHistory = (teamId?: number, playerId?: number) => {
+  const [history, setHistory] = useState<PlayerAttendanceHistory[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const loadHistory = useCallback(async () => {
+    if (!teamId || teamId <= 0 || !playerId || playerId <= 0) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const data = await trainingDB.getPlayerAttendanceHistory(teamId, playerId);
+      setHistory(data);
+    } catch (error) {
+      console.error('Error loading player attendance history:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [teamId, playerId]);
+
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
+
+  return { history, loading, refreshHistory: loadHistory };
+};
+
 // ==================== DASHBOARD STATS ====================
 type DashboardStats = {
   total_teams: number;
@@ -368,4 +533,17 @@ export const useDashboardStats = (deps: { enabled?: boolean } = {}) => {
   }, [enabled, loadStats]);
 
   return { stats, loading, refreshStats: loadStats };
+};
+
+export const useMonthAttendanceExport = (teamId: number, year: number, month: number) => {
+  const { isInitialized } = useDatabase();
+  const enabled = isInitialized && teamId > 0;
+
+  const loadMonthData = useCallback(async () => {
+    if (!enabled) return null;
+    const data = await trainingDB.getMonthAttendance(teamId, year, month);
+    return data;
+  }, [enabled, teamId, year, month]);
+
+  return { loadMonthData };
 };

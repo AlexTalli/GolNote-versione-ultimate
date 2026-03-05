@@ -100,6 +100,12 @@ export async function scheduleFineDueNotification(
   const granted = await ensureNotificationPermission();
   if (!granted) return false;
 
+  // Evita duplicati sullo stesso dispositivo per la stessa multa
+  if (typeof fineId === 'number' && fineId > 0) {
+    const existingId = await AsyncStorage.getItem(fineDueKey(fineId));
+    if (existingId) return existingId;
+  }
+
   const [year, month, day] = dueDate.split('-').map(Number);
   if (!year || !month || !day) return false;
 
@@ -115,7 +121,7 @@ export async function scheduleFineDueNotification(
     return false;
   }
 
-  let body = 'Hai una multa che scade domani.';
+  let body = 'Hai una multa che scade domani, non te lo dimenticare.';
   if (playerName && teamName) body = `${playerName} (${teamName}) ha una multa che scade domani.`;
   else if (playerName) body = `${playerName} ha una multa che scade domani.`;
 
@@ -138,6 +144,28 @@ export async function scheduleFineDueNotification(
 
   console.log('[NOTIF] Fine due notification scheduled with id:', notificationId);
   return notificationId;
+}
+
+/* ========== NOTIFICA IMMEDIATA NUOVA MULTA (PLAYER) ========== */
+
+export async function scheduleFineAssignedNotification(): Promise<boolean> {
+  const granted = await ensureNotificationPermission();
+  if (!granted) return false;
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Nuova multa',
+      body: 'Ti è appena stata assegnata una multa, apri l\'app per vederne i dettagli.',
+      data: { type: 'fine_assigned_player' },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: 1,
+      repeats: false,
+    },
+  });
+
+  return true;
 }
 
 /*

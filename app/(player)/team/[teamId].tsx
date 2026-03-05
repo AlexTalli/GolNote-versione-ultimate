@@ -8,25 +8,30 @@ import {
   ScrollView,
   RefreshControl,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 
 // Icona per il pulsante indietro
-import { ArrowLeft } from 'lucide-react-native';
+import { ArrowLeft, CalendarDays, Trash2, UserX } from 'lucide-react-native';
 
 // Database per caricare i giocatori
-import { playersDB, Player } from '@/database/database';
+import { playersDB, Player, usersDB } from '@/database/database';
 
 // Componente per mostrare la card del giocatore
 import { PlayerCard } from '@/components/PlayerCard';
+
+// Auth per eliminare account
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function PlayerTeamScreen() {
   /* ========== HOOKS E STATI ========== */
 
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { user, logout } = useAuth();
 
   const { teamId: teamIdParam } = useLocalSearchParams<{ teamId?: string }>();
   const teamId = useMemo(() => Number(teamIdParam ?? -1), [teamIdParam]);
@@ -47,6 +52,63 @@ export default function PlayerTeamScreen() {
       setLoading(false);
     }
   }, [teamId]);
+
+  // Elimina account
+  const handleDeleteAccount = useCallback(() => {
+    Alert.alert(
+      'Elimina Account',
+      'Sei sicuro di voler eliminare il tuo account? Questa azione è irreversibile.',
+      [
+        { text: 'Annulla', style: 'cancel' },
+        {
+          text: 'Elimina',
+          style: 'destructive',
+          onPress: async () => {
+            if (!user) return;
+            try {
+              await usersDB.deleteAccount(user.id);
+              await logout();
+              router.replace('/');
+            } catch (error) {
+              console.error('Error deleting account:', error);
+              Alert.alert('Errore', 'Impossibile eliminare l\'account.');
+            }
+          },
+        },
+      ]
+    );
+  }, [user, logout, router]);
+
+  // Dissocia da questo giocatore
+  const handleUnlinkPlayer = useCallback(() => {
+    Alert.alert(
+      'Dissocia Giocatore',
+      'Vuoi dissociarti da questo giocatore? Potrai scegliere un altro giocatore dopo.',
+      [
+        { text: 'Annulla', style: 'cancel' },
+        {
+          text: 'Dissocia',
+          onPress: async () => {
+            if (!user) return;
+            try {
+              await usersDB.unlinkPlayer(user.id);
+              
+              // Aggiorna la sessione
+              const updatedUser = { ...user, playerId: null };
+              const AsyncStorage = await import('@react-native-async-storage/async-storage');
+              await AsyncStorage.default.setItem('@session:v1', JSON.stringify(updatedUser));
+              
+              // Naviga a join-team
+              router.replace('/(player)/join-team');
+            } catch (error) {
+              console.error('Error unlinking player:', error);
+              Alert.alert('Errore', 'Impossibile dissociare il giocatore.');
+            }
+          },
+        },
+      ]
+    );
+  }, [user, router]);
 
   useEffect(() => {
     load();
@@ -117,8 +179,15 @@ export default function PlayerTeamScreen() {
           {teamName}
         </Text>
 
-        {/* Spazio vuoto per centrare il titolo */}
-        <View style={{ width: 44 }} />
+        {/* Icona dissocia giocatore */}
+        <TouchableOpacity style={s.unlinkBtn} onPress={handleUnlinkPlayer}>
+          <UserX size={20} color="#f59e0b" />
+        </TouchableOpacity>
+
+        {/* Icona cestino per eliminare account */}
+        <TouchableOpacity style={s.deleteBtn} onPress={handleDeleteAccount}>
+          <Trash2 size={20} color="#ffffff" />
+        </TouchableOpacity>
       </View>
 
       {/* Lista dei giocatori con scroll e refresh */}
@@ -129,6 +198,24 @@ export default function PlayerTeamScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
+        <TouchableOpacity
+          style={s.attendanceCta}
+          onPress={() =>
+            router.push({
+              pathname: '/(player)/attendance/[teamId]',
+              params: {
+                teamId: String(teamId),
+                teamName,
+              },
+            })
+          }
+        >
+          <CalendarDays size={18} color="#1d4ed8" />
+          <Text style={s.attendanceCtaText}>
+            Apri il calendario per vedere le presenze agli allenamenti
+          </Text>
+        </TouchableOpacity>
+
         <Text style={s.sectionTitle}>Giocatori</Text>
 
         {players.length === 0 ? (
@@ -182,6 +269,26 @@ const s = StyleSheet.create({
     marginRight: 8,
   },
 
+  // Pulsante dissocia giocatore
+  unlinkBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 4,
+  },
+
+  // Pulsante elimina account
+  deleteBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 4,
+  },
+
   // Titolo centrato
   title: {
     flex: 1,
@@ -192,6 +299,23 @@ const s = StyleSheet.create({
 
   // Lista dei giocatori
   list: { flex: 1, paddingHorizontal: 16, paddingTop: 16 },
+  attendanceCta: {
+    marginBottom: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    backgroundColor: '#eff6ff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  attendanceCtaText: {
+    flex: 1,
+    color: '#1e3a8a',
+    fontWeight: '700',
+  },
 
   // Titolo della sezione
   sectionTitle: {

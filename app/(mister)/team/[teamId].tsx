@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState, useCallback, useMemo } from 'react';
-import { ArrowLeft, Plus } from 'lucide-react-native';
+import { ArrowLeft, Plus, CalendarDays } from 'lucide-react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useDatabase, usePlayers } from '@/hooks/useDatabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -148,6 +148,24 @@ const sortedPlayers = useMemo(() => {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
+        <TouchableOpacity
+          style={styles.attendanceCta}
+          onPress={() =>
+            router.push({
+              pathname: '/(mister)/attendance/[teamId]',
+              params: {
+                teamId: String(teamId),
+                teamName: typeof teamName === 'string' ? teamName : undefined,
+              },
+            })
+          }
+        >
+          <CalendarDays size={18} color="#1d4ed8" />
+          <Text style={styles.attendanceCtaText}>
+            Apri il calendario per segnare le presenze agli allenamenti
+          </Text>
+        </TouchableOpacity>
+
         {players.length === 0 ? (
           <View style={{ paddingVertical: 24, alignItems: 'center' }}>
             <Text style={{ color: '#6b7280' }}>
@@ -230,5 +248,22 @@ const styles = StyleSheet.create({
   },
 
   list: { flex: 1, paddingHorizontal: 16, paddingTop: 16 },
+  attendanceCta: {
+    marginBottom: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    backgroundColor: '#eff6ff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  attendanceCtaText: {
+    flex: 1,
+    color: '#1e3a8a',
+    fontWeight: '700',
+  },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 });

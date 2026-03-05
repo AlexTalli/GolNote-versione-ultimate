@@ -109,13 +109,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.removeItem(SESSION_KEY);
   };
 
+  // Funzione per aggiornare l'utente e salvare in AsyncStorage
+  const updateUser = async (u: AppUser | null) => {
+    setUser(u);
+    if (u) {
+      await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(u));
+    } else {
+      await AsyncStorage.removeItem(SESSION_KEY);
+    }
+  };
+
   // Proprietà calcolate per il ruolo
   const isMister = user?.role === 'mister';
   const isPlayer = user?.role === 'player';
 
   // Valore del contesto memorizzato
   const value = useMemo(
-    () => ({ user, loading, login, register, logout, setUser, isMister, isPlayer }),
+    () => ({ user, loading, login, register, logout, setUser: updateUser, isMister, isPlayer }),
     [user, loading, isMister, isPlayer]
   );
 

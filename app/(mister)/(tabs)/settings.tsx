@@ -26,10 +26,12 @@ import { useRole } from '@/contexts/RoleContext';
 
 // DB helpers
 import {
-  buildCsvForMister,
   clearAllDataForMister,
   deleteMisterAccount,
 } from '@/database/database';
+
+// Export utilities
+import { exportMisterFinesXLSX } from '@/utils/exportToXlsx';
 
 // hook per caricare le squadre del mister
 import { useTeams } from '@/hooks/useDatabase';
@@ -125,7 +127,7 @@ export default function MisterSettings() {
     }
   }, [refreshTeams, user?.id]);
 
-  /* ========== ESPORTAZIONE CSV ========== */
+  /* ========== ESPORTAZIONE EXCEL ========== */
 
   // Apre il picker per scegliere quale squadra esportare
   const handleExportData = () => {
@@ -145,91 +147,19 @@ export default function MisterSettings() {
 
   // Esegue l'esportazione effettiva dopo la scelta della squadra
   const doExport = async (teamId?: number, teamName?: string) => {
-    if (!user?.id || !user?.nickname) {
+    if (!user?.id) {
       Alert.alert('Errore', 'Utente non valido.');
       return;
     }
-
-    console.log('➡️ doExport CALLED', { teamId, teamName });
 
     setExportPickerVisible(false);
     setExporting(true);
 
     try {
-      // 1) Genera CSV dal DB (tutte o una squadra sola)
-      const csv = await buildCsvForMister(user.id, teamId);
-      console.log('📄 CSV generated, length:', csv.length);
-
-      // 2) Nome file: Mister-Nickname-data_ora_[Team].csv
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const datePart = `${pad(now.getDate())}-${pad(
-        now.getMonth() + 1
-      )}-${now.getFullYear()}`;
-      const timePart = `${pad(now.getHours())}-${pad(now.getMinutes())}`;
-      const safeNick = user.nickname.replace(/[^a-zA-Z0-9_-]+/g, '_');
-
-      const teamSuffix = teamId
-        ? `_${(teamName ?? 'Squadra')
-            .replace(/[^a-zA-Z0-9_-]+/g, '_')
-            .substring(0, 20)}`
-        : '_TutteLeSquadre';
-
-      const fileName = `Mister-${safeNick}-${datePart}_${timePart}${teamSuffix}.csv`;
-
-      const baseDir =
-        FileSystem.cacheDirectory ?? FileSystem.documentDirectory ?? '';
-      const fileUri = baseDir + fileName;
-
-      console.log('📝 Writing file at:', fileUri);
-
-      // 3) Scrive il file
-      await FileSystem.writeAsStringAsync(fileUri, csv, {
-        encoding: FileSystem.EncodingType.UTF8,
-      });
-
-      console.log('✅ File scritto, controllo Sharing…');
-
-      // 4) Condivisione
-      const canShare = await Sharing.isAvailableAsync();
-      console.log('📤 Sharing available?', canShare);
-
-      if (!canShare) {
-        Alert.alert(
-          'CSV pronto',
-          `Il file è stato creato ma la condivisione non è disponibile.\n\nPercorso:\n${fileUri}`
-        );
-        return;
-      }
-
-      Alert.alert('CSV pronto', 'Vuoi condividere il file CSV adesso?', [
-        { text: 'Annulla', style: 'cancel' },
-        {
-          text: 'Condividi',
-          onPress: async () => {
-            try {
-              console.log('🚀 Avvio shareAsync da Alert…');
-              await Sharing.shareAsync(fileUri, {
-                mimeType: 'text/csv',
-                dialogTitle: 'Esporta multe in CSV',
-              });
-              console.log('📨 Share sheet aperto (da Alert)');
-            } catch (err) {
-              console.error('❌ Errore in shareAsync:', err);
-              Alert.alert(
-                'Errore',
-                'Si è verificato un errore durante la condivisione del file.'
-              );
-            }
-          },
-        },
-      ]);
-    } catch (e) {
-      console.error('❌ Errore export CSV:', e);
-      Alert.alert(
-        'Errore',
-        'Si è verificato un errore durante l’esportazione del CSV.'
-      );
+      await exportMisterFinesXLSX(user.id, teamId, teamName ?? 'Squadra');
+    } catch (error) {
+      console.error('Error exporting fines:', error);
+      Alert.alert('Errore', 'Impossibile esportare il file Excel.');
     } finally {
       setExporting(false);
     }
@@ -349,11 +279,11 @@ export default function MisterSettings() {
             <Download size={20} color="#22c55e" />
             <View style={styles.optionContent}>
               <Text style={styles.optionTitle}>
-                {exporting ? 'Esportazione in corso…' : 'Esporta in CSV'}
+                {exporting ? 'Esportazione in corso…' : 'Esporta in Excel'}
               </Text>
               <Text style={styles.optionDescription}>
                 {hasTeams
-                  ? 'Scegli una squadra (o tutte) e scarica le multe in CSV'
+                  ? 'Scegli una squadra (o tutte) e scarica le multe in Excel'
                   : 'Crea almeno una squadra per poter esportare i dati'}
               </Text>
             </View>
@@ -477,7 +407,8 @@ export default function MisterSettings() {
                 • Crea e gestisci le tue squadre{"\n"}
                 • Aggiungi i giocatori e assegna le multe{"\n"}
                 • Tieni traccia di pagato / non pagato{"\n"}
-                • Esporta in CSV per condividerlo{"\n"}
+                • Aggiorna il calendario delle presenze agli allenamenti{"\n"}
+                • Esporta in Excel per condividere il calendario o il resoconto delle multe{"\n"}
                 • Attiva promemoria settimanali{"\n"}
                 • Notifiche sulle scadenze multe (il giorno prima della scadenza)
               </Text>
@@ -486,7 +417,7 @@ export default function MisterSettings() {
         </View>
       </ScrollView>
 
-      {/* ============= SCELTA SQUADRA - ESP. CSV ============= */}
+      {/* ============= SCELTA SQUADRA - ESPORTAZIONE EXCEL ============= */}
       <Modal
         visible={exportPickerVisible}
         transparent
@@ -495,7 +426,7 @@ export default function MisterSettings() {
       >
         <View style={styles.overlay}>
           <View style={styles.modal}>
-            <Text style={styles.modalTitle}>Esporta multe in CSV</Text>
+            <Text style={styles.modalTitle}>Esporta multe in Excel</Text>
             <Text style={styles.modalSubtitle}>
               Seleziona una squadra oppure tutte le squadre.
             </Text>

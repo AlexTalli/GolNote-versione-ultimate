@@ -34,6 +34,7 @@ export type Player = {
   created_at: string;
   active_fines?: number;
   total_unpaid?: number;
+  is_taken?: number; // 0 = disponibile, >0 = già associato a un utente
 };
 
 export type Fine = {
@@ -51,6 +52,37 @@ export type Fine = {
   player_number?: string;
   team_name?: string;
   team_color?: string;
+};
+
+export type PlayerAttendanceSummary = {
+  present: number;
+  late: number;
+  injured: number;
+  absent_justified: number;
+  absent_unjustified: number;
+  sick: number;
+  total_sessions: number;
+};
+
+export type PlayerAttendanceHistory = {
+  date: string; // YYYY-MM-DD
+  status: AttendanceStatus;
+};
+
+export type AttendanceStatus =
+  | 'present'
+  | 'late'
+  | 'injured'
+  | 'absent_justified'
+  | 'absent_unjustified'
+  | 'sick';
+
+export type TeamAttendanceRow = {
+  player_id: number;
+  player_name: string;
+  player_number: string;
+  player_position: string;
+  attendance_status: AttendanceStatus | null;
 };
 
 /* =========================
@@ -82,7 +114,7 @@ async function makeDb(): Promise<AsyncDB> {
   return db as AsyncDB;
 }
 
-const getDb = () => (dbPromise ??= makeDb());
+export const getDb = () => (dbPromise ??= makeDb());
 
 /* =========================
  *     INIT DATABASE
@@ -177,6 +209,48 @@ export const initDatabase = async () => {
     await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_fines_player ON fines (player_id);`);
     await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_fines_paid ON fines (is_paid, due_date);`);
 
+    // TRAINING SESSIONS
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS training_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        team_id INTEGER NOT NULL,
+        session_date TEXT NOT NULL,          -- YYYY-MM-DD
+        title TEXT,
+        note TEXT,
+        created_by INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE CASCADE,
+        FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL,
+        UNIQUE(team_id, session_date)
+      );
+    `);
+
+    // ATTENDANCE RECORDS
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS attendance_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        player_id INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK(status IN (
+          'present',
+          'late',
+          'injured',
+          'absent_justified',
+          'absent_unjustified',
+          'sick'
+        )),
+        note TEXT,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (session_id) REFERENCES training_sessions (id) ON DELETE CASCADE,
+        FOREIGN KEY (player_id) REFERENCES players (id) ON DELETE CASCADE,
+        UNIQUE(session_id, player_id)
+      );
+    `);
+
+    await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_training_team_date ON training_sessions(team_id, session_date);`);
+    await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_attendance_session ON attendance_records(session_id);`);
+    await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_attendance_player ON attendance_records(player_id);`);
+
     // Niente seed di team globali: ogni mister crea i propri team
     console.log('Database initialized successfully');
   } catch (error) {
@@ -218,6 +292,28 @@ export const usersDB = {
       [playerId, userId]
     );
     return true;
+  },
+
+  unlinkPlayer: async (userId: number) => {
+    const db = await getDb();
+    try {
+      await db.runAsync(`UPDATE users SET player_id = NULL WHERE id = ?`, [userId]);
+      return true;
+    } catch (error) {
+      console.error('Error unlinking player:', error);
+      return false;
+    }
+  },
+
+  deleteAccount: async (userId: number) => {
+    const db = await getDb();
+    try {
+      await db.runAsync(`DELETE FROM users WHERE id = ?`, [userId]);
+      return true;
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      return false;
+    }
   },
 
   findById: async (id: number) => {
@@ -554,7 +650,8 @@ delete: async (ownerId: number, id: number) => {
              t.name  AS team_name,
              t.color AS team_color,
              COUNT(CASE WHEN f.is_paid = 0 THEN 1 END)                   AS active_fines,
-             COALESCE(SUM(CASE WHEN f.is_paid = 0 THEN f.amount END), 0) AS total_unpaid
+             COALESCE(SUM(CASE WHEN f.is_paid = 0 THEN f.amount END), 0) AS total_unpaid,
+             (SELECT COUNT(*) FROM users WHERE player_id = p.id) AS is_taken
       FROM players p
       JOIN teams t ON p.team_id = t.id
       LEFT JOIN fines f ON p.id = f.player_id
@@ -563,6 +660,22 @@ delete: async (ownerId: number, id: number) => {
       ORDER BY p.name ASC;
       `,
       [teamId]
+    );
+  },
+
+  // Ottieni singolo giocatore per id (usato per redirect dopo login)
+  getById: async (playerId: number): Promise<Player | null> => {
+    const db = await getDb();
+    return await db.getFirstAsync<Player>(
+      `
+      SELECT p.*,
+             t.name  AS team_name,
+             t.color AS team_color
+      FROM players p
+      JOIN teams t ON p.team_id = t.id
+      WHERE p.id = ?
+      `,
+      [playerId]
     );
   },
 
@@ -750,6 +863,327 @@ export const finesDB = {
       [fineId, ownerId]
     );
     return row?.notification_id ?? null;
+  },
+};
+
+/* =========================
+ *      TRAINING DB
+ * ========================= */
+export const trainingDB = {
+  getTeamAttendanceByDate: async (
+    ownerId: number,
+    teamId: number,
+    sessionDate: string
+  ): Promise<TeamAttendanceRow[]> => {
+    const db = await getDb();
+
+    try {
+      return await db.getAllAsync<TeamAttendanceRow>(
+        `
+        SELECT
+          p.id       AS player_id,
+          p.name     AS player_name,
+          p.number   AS player_number,
+          p.position AS player_position,
+          ar.status  AS attendance_status
+        FROM players p
+        JOIN teams t ON p.team_id = t.id
+        LEFT JOIN training_sessions ts
+          ON ts.team_id = p.team_id
+         AND ts.session_date = ?
+        LEFT JOIN attendance_records ar
+          ON ar.session_id = ts.id
+         AND ar.player_id = p.id
+        WHERE p.team_id = ?
+          AND t.owner_user_id = ?
+        ORDER BY
+          CASE LOWER(p.position)
+            WHEN 'portiere' THEN 0
+            WHEN 'difensore' THEN 1
+            WHEN 'centrocampista' THEN 2
+            WHEN 'attaccante' THEN 3
+            ELSE 99
+          END,
+          p.name COLLATE NOCASE ASC;
+        `,
+        [sessionDate, teamId, ownerId]
+      );
+    } catch (error) {
+      console.error('Error getting team attendance by date:', error);
+      return [];
+    }
+  },
+
+  getTeamAttendanceByDatePublic: async (
+    teamId: number,
+    sessionDate: string
+  ): Promise<TeamAttendanceRow[]> => {
+    const db = await getDb();
+
+    try {
+      return await db.getAllAsync<TeamAttendanceRow>(
+        `
+        SELECT
+          p.id       AS player_id,
+          p.name     AS player_name,
+          p.number   AS player_number,
+          p.position AS player_position,
+          ar.status  AS attendance_status
+        FROM players p
+        LEFT JOIN training_sessions ts
+          ON ts.team_id = p.team_id
+         AND ts.session_date = ?
+        LEFT JOIN attendance_records ar
+          ON ar.session_id = ts.id
+         AND ar.player_id = p.id
+        WHERE p.team_id = ?
+        ORDER BY
+          CASE LOWER(p.position)
+            WHEN 'portiere' THEN 0
+            WHEN 'difensore' THEN 1
+            WHEN 'centrocampista' THEN 2
+            WHEN 'attaccante' THEN 3
+            ELSE 99
+          END,
+          p.name COLLATE NOCASE ASC;
+        `,
+        [sessionDate, teamId]
+      );
+    } catch (error) {
+      console.error('Error getting public team attendance by date:', error);
+      return [];
+    }
+  },
+
+  setPlayerAttendance: async (
+    ownerId: number,
+    payload: {
+      team_id: number;
+      session_date: string;
+      player_id: number;
+      status: AttendanceStatus;
+    }
+  ): Promise<boolean> => {
+    const db = await getDb();
+
+    try {
+      // team ownership check
+      const team = await db.getFirstAsync<{ id: number }>(
+        `SELECT id FROM teams WHERE id = ? AND owner_user_id = ?`,
+        [payload.team_id, ownerId]
+      );
+      if (!team) return false;
+
+      // player belongs to the same team
+      const player = await db.getFirstAsync<{ id: number }>(
+        `SELECT id FROM players WHERE id = ? AND team_id = ?`,
+        [payload.player_id, payload.team_id]
+      );
+      if (!player) return false;
+
+      // ensure session exists for (team, date)
+      await db.runAsync(
+        `
+        INSERT OR IGNORE INTO training_sessions (team_id, session_date, created_by)
+        VALUES (?, ?, ?);
+        `,
+        [payload.team_id, payload.session_date, ownerId]
+      );
+
+      const session = await db.getFirstAsync<{ id: number }>(
+        `
+        SELECT id
+        FROM training_sessions
+        WHERE team_id = ? AND session_date = ?
+        LIMIT 1;
+        `,
+        [payload.team_id, payload.session_date]
+      );
+      if (!session?.id) return false;
+
+      // Check if record already exists
+      const existing = await db.getFirstAsync<{ status: string }>(
+        `SELECT status FROM attendance_records WHERE session_id = ? AND player_id = ?`,
+        [session.id, payload.player_id]
+      );
+
+      // If same status is clicked, delete (toggle off)
+      if (existing && existing.status === payload.status) {
+        await db.runAsync(
+          `DELETE FROM attendance_records WHERE session_id = ? AND player_id = ?`,
+          [session.id, payload.player_id]
+        );
+      } else {
+        // Insert or update attendance
+        await db.runAsync(
+          `
+          INSERT INTO attendance_records (session_id, player_id, status, updated_at)
+          VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(session_id, player_id)
+          DO UPDATE SET
+            status = excluded.status,
+            updated_at = CURRENT_TIMESTAMP;
+          `,
+          [session.id, payload.player_id, payload.status]
+        );
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error setting player attendance:', error);
+      return false;
+    }
+  },
+
+  getPlayerAttendanceSummary: async (
+    teamId: number,
+    playerId: number
+  ): Promise<PlayerAttendanceSummary> => {
+    const db = await getDb();
+
+    try {
+      const result = await db.getFirstAsync<{
+        present: number;
+        late: number;
+        injured: number;
+        absent_justified: number;
+        absent_unjustified: number;
+        sick: number;
+        total_sessions: number;
+      }>(
+        `
+        SELECT
+          COUNT(CASE WHEN ar.status = 'present' THEN 1 END) AS present,
+          COUNT(CASE WHEN ar.status = 'late' THEN 1 END) AS late,
+          COUNT(CASE WHEN ar.status = 'injured' THEN 1 END) AS injured,
+          COUNT(CASE WHEN ar.status = 'absent_justified' THEN 1 END) AS absent_justified,
+          COUNT(CASE WHEN ar.status = 'absent_unjustified' THEN 1 END) AS absent_unjustified,
+          COUNT(CASE WHEN ar.status = 'sick' THEN 1 END) AS sick,
+          COUNT(DISTINCT ts.id) AS total_sessions
+        FROM players p
+        LEFT JOIN training_sessions ts ON ts.team_id = p.team_id
+        LEFT JOIN attendance_records ar ON ar.session_id = ts.id AND ar.player_id = p.id
+        WHERE p.id = ? AND p.team_id = ?
+        `,
+        [playerId, teamId]
+      );
+
+      return (
+        result ?? {
+          present: 0,
+          late: 0,
+          injured: 0,
+          absent_justified: 0,
+          absent_unjustified: 0,
+          sick: 0,
+          total_sessions: 0,
+        }
+      );
+    } catch (error) {
+      console.error('Error getting player attendance summary:', error);
+      return {
+        present: 0,
+        late: 0,
+        injured: 0,
+        absent_justified: 0,
+        absent_unjustified: 0,
+        sick: 0,
+        total_sessions: 0,
+      };
+    }
+  },
+
+  getPlayerAttendanceHistory: async (
+    teamId: number,
+    playerId: number
+  ): Promise<PlayerAttendanceHistory[]> => {
+    const db = await getDb();
+
+    try {
+      return await db.getAllAsync<PlayerAttendanceHistory>(
+        `
+        SELECT
+          ts.session_date AS date,
+          ar.status AS status
+        FROM training_sessions ts
+        LEFT JOIN attendance_records ar
+          ON ar.session_id = ts.id
+         AND ar.player_id = ?
+        WHERE ts.team_id = ?
+        ORDER BY ts.session_date ASC;
+        `,
+        [playerId, teamId]
+      );
+    } catch (error) {
+      console.error('Error getting player attendance history:', error);
+      return [];
+    }
+  },
+
+  getMonthAttendance: async (
+    teamId: number,
+    year: number,
+    month: number // 1-12
+  ): Promise<{
+    players: Array<{ id: number; name: string; number: string; position: string }>;
+    attendances: Array<{ player_id: number; date: string; status: AttendanceStatus }>;
+  }> => {
+    const db = await getDb();
+
+    try {
+      // Get all players from the team
+      const players = await db.getAllAsync<{
+        id: number;
+        name: string;
+        number: string;
+        position: string;
+      }>(
+        `
+        SELECT id, name, number, position
+        FROM players
+        WHERE team_id = ?
+        ORDER BY
+          CASE position
+            WHEN 'portiere' THEN 1
+            WHEN 'difensore' THEN 2
+            WHEN 'centrocampista' THEN 3
+            WHEN 'attaccante' THEN 4
+            ELSE 5
+          END,
+          name COLLATE NOCASE ASC;
+        `,
+        [teamId]
+      );
+
+      // Build date range for the month
+      const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+      const nextMonth = month === 12 ? 1 : month + 1;
+      const nextYear = month === 12 ? year + 1 : year;
+      const endDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`;
+
+      // Get all attendance records for this team in the given month
+      const attendances = await db.getAllAsync<{
+        player_id: number;
+        date: string;
+        status: AttendanceStatus;
+      }>(
+        `
+        SELECT ar.player_id, ts.session_date AS date, ar.status
+        FROM training_sessions ts
+        JOIN attendance_records ar ON ar.session_id = ts.id
+        WHERE ts.team_id = ?
+          AND ts.session_date >= ?
+          AND ts.session_date < ?
+        ORDER BY ts.session_date ASC, ar.player_id ASC;
+        `,
+        [teamId, startDate, endDate]
+      );
+
+      return { players, attendances };
+    } catch (error) {
+      console.error('Error getting month attendance:', error);
+      return { players: [], attendances: [] };
+    }
   },
 };
 

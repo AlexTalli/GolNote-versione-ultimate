@@ -45,6 +45,13 @@
       "eas": {
         "projectId": "fec57233-1790-4662-abfe-74fa64d0b48b"
       }
+    },
+    "env": {
+      "production": {},
+      "development": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://jcilvieqvrduezwlseko.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpjaWx2aWVxdnJkdWV6d2xzZWtvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MTQ4NzYsImV4cCI6MjA4ODE5MDg3Nn0.WfXwJ8mrDRDLCYT6KQf9UZsUg1lDIlZRKfVobXmRnjM"
+      }
     }
   }
 }

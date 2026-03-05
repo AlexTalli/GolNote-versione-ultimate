@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   View,
@@ -9,16 +9,20 @@ import {
   FlatList,
   TouchableOpacity,
   Modal,
+  Alert,
 } from 'react-native';
-import { Lock, Search, Eye, EyeOff } from 'lucide-react-native';
+import { Lock, Search, Eye, EyeOff, Users } from 'lucide-react-native';
 import { useTeamSearch, useCheckTeamPassword } from '@/hooks/usePlayerTeam';
 import { useRouter } from 'expo-router';
-import { useAuth } from '@/contexts/AuthContext'; 
+import { useAuth } from '@/contexts/AuthContext';
+import { useRole } from '@/contexts/RoleContext';
+import { playersDB, type Player } from '@/database/database'; 
 
 // Schermata per giocatori: cerca e unisciti a una squadra
 export default function JoinTeamScreen() {
   const router = useRouter();
-  const { user } = useAuth(); // nickname 
+  const { user, setUser } = useAuth();
+  const { setPlayerIdentity } = useRole();
   const { query, setQuery, results, loading } = useTeamSearch(); // Hook per ricerca squadre
   const { verify } = useCheckTeamPassword(); // Hook per verifica password
 
@@ -26,6 +30,12 @@ export default function JoinTeamScreen() {
   const [pwdModalVisible, setPwdModalVisible] = useState(false);
   const [pwd, setPwd] = useState('');
   const [showPwd, setShowPwd] = useState(false);
+
+  // Stati per modal selezione giocatore
+  const [playerModalVisible, setPlayerModalVisible] = useState(false);
+  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
+  const [teamPlayers, setTeamPlayers] = useState<Player[]>([]);
+  const [playersLoading, setPlayersLoading] = useState(false);
 
   // Squadra selezionata per join
   const [selected, setSelected] = useState<{
@@ -36,17 +46,92 @@ export default function JoinTeamScreen() {
   const [checking, setChecking] = useState(false); // Loading verifica password
   const [error, setError] = useState<string | null>(null);
 
-  // Naviga ai dettagli squadra
-  const goToTeam = (teamId: number) => {
-    router.push({ pathname: '/team/[teamId]', params: { teamId: String(teamId) } });
+  // Carica giocatori quando selectedTeamId cambia
+  useEffect(() => {
+    if (selectedTeamId && selectedTeamId > 0) {
+      setPlayersLoading(true);
+      playersDB.getByTeamPublic(selectedTeamId)
+        .then(setTeamPlayers)
+        .catch((err) => {
+          console.error('Error loading players:', err);
+          setTeamPlayers([]);
+        })
+        .finally(() => setPlayersLoading(false));
+    } else {
+      setTeamPlayers([]);
+    }
+  }, [selectedTeamId]);
+
+  // Sorting dei giocatori per ruolo e nome
+  const sortedTeamPlayers = useMemo(() => {
+    const POSITION_ORDER: Record<string, number> = {
+      portiere: 0,
+      difensore: 1,
+      centrocampista: 2,
+      attaccante: 3,
+    };
+
+    return [...teamPlayers].sort((a, b) => {
+      const posA = POSITION_ORDER[a.position?.toLowerCase()] ?? 99;
+      const posB = POSITION_ORDER[b.position?.toLowerCase()] ?? 99;
+
+      // 1️⃣ Ordine per ruolo
+      if (posA !== posB) {
+        return posA - posB;
+      }
+
+      // 2️⃣ Stesso ruolo → ordine alfabetico
+      return a.name.localeCompare(b.name, 'it', { sensitivity: 'base' });
+    });
+  }, [teamPlayers]);
+
+  // Dopo aver verificato password, mostra modal selezione giocatore
+  const showPlayerSelection = (teamId: number) => {
+    setSelectedTeamId(teamId);
+    setPlayerModalVisible(true);
   };
 
-  // Apre modal password o entra direttamente se non protetta
+  // Associa utente a giocatore e naviga alla squadra
+  const selectPlayer = async (playerId: number, isTaken: boolean) => {
+    if (!user || !selectedTeamId) return;
+    
+    // Controlla se il giocatore è già stato selezionato
+    if (isTaken) {
+      Alert.alert(
+        'Giocatore non disponibile',
+        'Questo giocatore è già stato associato a un altro account.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    
+    try {
+      // Collega l'utente al giocatore nel database
+      const { usersDB } = await import('@/database/database');
+      await usersDB.linkPlayer(user.id, playerId);
+      
+      // Aggiorna il context e la sessione
+      const updatedUser = { ...user, playerId };
+      setUser(updatedUser);
+      setPlayerIdentity({ playerId });
+      
+      // Naviga alla schermata della squadra (non alle multe)
+      setPlayerModalVisible(false);
+      router.replace({
+        pathname: '/(player)/team/[teamId]',
+        params: { teamId: String(selectedTeamId) },
+      });
+    } catch (error) {
+      console.error('Error linking player:', error);
+    }
+  };
+
+  // Apre modal password o mostra selezione giocatore se non protetta
   const openPwd = (team: any) => {
     const hasPassword = !!team.password_hash;
     setSelected({ id: team.id, name: team.name, hasPassword });
     if (!hasPassword) {
-      return goToTeam(team.id); // Entra senza password
+      return showPlayerSelection(team.id); // Mostra selezione giocatore
     }
     setPwd('');
     setShowPwd(false);
@@ -71,7 +156,7 @@ export default function JoinTeamScreen() {
     setChecking(false);
     if (ok) {
       closePwdModal();
-      goToTeam(selected.id); // Entra se ok
+      showPlayerSelection(selected.id); // Mostra selezione giocatore
     } else {
       setError('Password errata. Riprova.');
     }
@@ -201,6 +286,72 @@ export default function JoinTeamScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Modal selezione giocatore */}
+      <Modal
+        visible={playerModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPlayerModalVisible(false)}
+      >
+        <View style={s.overlay}>
+          <View style={[s.modal, { maxHeight: '80%' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+              <Users size={22} color="#111827" />
+              <Text style={s.modalTitle}>Seleziona il tuo profilo</Text>
+            </View>
+            
+            <Text style={s.modalSubtitle}>
+              Scegli quale giocatore sei dalla rosa:
+            </Text>
+
+            {playersLoading ? (
+              <View style={{ paddingVertical: 32, alignItems: 'center' }}>
+                <ActivityIndicator />
+              </View>
+            ) : teamPlayers.length === 0 ? (
+              <Text style={s.emptyText}>Nessun giocatore trovato in questa squadra.</Text>
+            ) : (
+              <FlatList
+                data={sortedTeamPlayers}
+                keyExtractor={(item) => String(item.id)}
+                style={{ maxHeight: 400 }}
+                renderItem={({ item }) => {
+                  const isTaken = (item.is_taken ?? 0) > 0;
+                  return (
+                    <TouchableOpacity
+                      style={[s.playerRow, isTaken && s.playerRowDisabled]}
+                      onPress={() => selectPlayer(item.id, isTaken)}
+                    >
+                      <View style={[s.playerNumber, isTaken && s.playerNumberDisabled]}>
+                        <Text style={s.playerNumberText}>{item.number}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[s.playerName, isTaken && s.playerNameDisabled]}>
+                          {item.name}
+                        </Text>
+                        <Text style={s.playerPosition}>{item.position}</Text>
+                      </View>
+                      {isTaken && (
+                        <View style={s.takenBadge}>
+                          <Text style={s.takenText}>Già associato</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            )}
+
+            <TouchableOpacity
+              style={[s.btnGhost, { marginTop: 16 }]}
+              onPress={() => setPlayerModalVisible(false)}
+            >
+              <Text style={s.btnGhostText}>Annulla</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -295,6 +446,67 @@ const s = StyleSheet.create({
     fontWeight: '700',
     color: '#111827',
     marginBottom: 12,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 12,
+  },
+
+  // Riga giocatore nel modal
+  playerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#f9fafb',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  playerNumber: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#3b82f6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playerNumberText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  playerName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  playerPosition: {
+    fontSize: 13,
+    color: '#6b7280',
+  },
+  playerRowDisabled: {
+    opacity: 0.5,
+    backgroundColor: '#f3f4f6',
+  },
+  playerNumberDisabled: {
+    backgroundColor: '#9ca3af',
+  },
+  playerNameDisabled: {
+    color: '#9ca3af',
+  },
+  takenBadge: {
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  takenText: {
+    fontSize: 11,
+    color: '#d97706',
+    fontWeight: '600',
   },
 
   // Riga password

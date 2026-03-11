@@ -16,7 +16,7 @@ import { useDatabase, usePlayers } from '@/hooks/useDatabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { PlayerCard } from '@/components/PlayerCard';
 import { AddPlayerModal } from '@/components/AddPlayerModal';
-import type { Player } from '@/database/database';
+import type { Player } from '@/database/database.supabase';
 
 export default function TeamPlayersScreen() {
   const insets = useSafeAreaInsets();
@@ -41,18 +41,41 @@ export default function TeamPlayersScreen() {
     loading,
     addPlayer,
     deletePlayer,
+    updatePlayer,
     refreshPlayers,
   } = usePlayers(teamId, { enabled });
 
   const [modalVisible, setModalVisible] = useState(false);
+  const [editingPlayerId, setEditingPlayerId] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [sortBy, setSortBy] = useState<'surname' | 'position'>('position');
 
   const handleAddPlayer = useCallback(
-    async (playerData: { name: string; number: string; position: string; team_id: number }) => {
-      const ok = await addPlayer(playerData);
+    async (playerData: { name?: string; surname?: string; position?: string; team_id?: number }) => {
+      if (!playerData.name || !playerData.surname || !playerData.team_id) {
+        return;
+      }
+      const ok = await addPlayer({
+        name: playerData.name,
+        surname: playerData.surname,
+        position: playerData.position || 'Attaccante',
+        team_id: playerData.team_id,
+      });
       if (ok) setModalVisible(false);
     },
     [addPlayer]
+  );
+
+  const handleEditPlayer = useCallback(
+    async (playerData: { name?: string; surname?: string; position?: string }) => {
+      if (!editingPlayerId) return;
+      const ok = await updatePlayer(editingPlayerId, playerData);
+      if (ok) {
+        setModalVisible(false);
+        setEditingPlayerId(null);
+      }
+    },
+    [editingPlayerId, updatePlayer]
   );
 
   const onRefresh = useCallback(async () => {
@@ -93,18 +116,21 @@ const POSITION_ORDER: Record<string, number> = {
 
 const sortedPlayers = useMemo(() => {
   return [...players].sort((a, b) => {
-    const posA = POSITION_ORDER[a.position?.toLowerCase()] ?? 99;
-    const posB = POSITION_ORDER[b.position?.toLowerCase()] ?? 99;
-
-    // 1️Ordine per ruolo
-    if (posA !== posB) {
-      return posA - posB;
+    if (sortBy === 'position') {
+      // Ordine per ruolo, poi alfabetico per nome
+      const posA = POSITION_ORDER[a.position?.toLowerCase()] ?? 99;
+      const posB = POSITION_ORDER[b.position?.toLowerCase()] ?? 99;
+      if (posA !== posB) return posA - posB;
+      return a.name.localeCompare(b.name, 'it', { sensitivity: 'base' });
+    } else {
+      // Ordine alfabetico per cognome
+      // Se surname esiste, usalo; altrimenti prova a estrarre l'ultima parola da name
+      const surnameA = a.surname || a.name.split(' ').pop() || a.name;
+      const surnameB = b.surname || b.name.split(' ').pop() || b.name;
+      return surnameA.localeCompare(surnameB, 'it', { sensitivity: 'base' });
     }
-
-    // 2️Stesso ruolo → ordine alfabetico per nome
-    return a.name.localeCompare(b.name, 'it', { sensitivity: 'base' });
   });
-}, [players]);
+}, [players, sortBy]);
 
   // gate
   if (!user || user.role !== 'mister') {
@@ -148,6 +174,29 @@ const sortedPlayers = useMemo(() => {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
+        {/* Sort buttons */}
+        <View style={styles.sortBar}>
+          <Text style={styles.sortLabel}>Ordina per:</Text>
+          <View style={styles.sortButtons}>
+            <TouchableOpacity
+              style={[styles.sortBtn, sortBy === 'position' && styles.sortBtnActive]}
+              onPress={() => setSortBy('position')}
+            >
+              <Text style={[styles.sortBtnText, sortBy === 'position' && styles.sortBtnTextActive]}>
+                Ruolo
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.sortBtn, sortBy === 'surname' && styles.sortBtnActive]}
+              onPress={() => setSortBy('surname')}
+            >
+              <Text style={[styles.sortBtnText, sortBy === 'surname' && styles.sortBtnTextActive]}>
+                Cognome
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <TouchableOpacity
           style={styles.attendanceCta}
           onPress={() =>
@@ -173,32 +222,41 @@ const sortedPlayers = useMemo(() => {
             </Text>
           </View>
         ) : (
-          sortedPlayers.map((player: Player) => (
+          sortedPlayers.map((player: Player, index: number) => (
             <PlayerCard
               key={String(player.id)}
               player={player}
+              index={index + 1}
               onPress={() =>
                 router.push({
                   pathname: '/(mister)/player/[playerId]/fines',
                   params: {
                     playerId: String(player.id),
-                    playerName: player.name,                                    
+                    playerName: player.surname ? `${player.surname} ${player.name}` : player.name,
                     teamName: typeof teamName === 'string' ? teamName : undefined,
                   },
                 })
               }
               onDelete={() => askDeletePlayer(player.id, player.name)}
+              onEdit={() => {
+                setEditingPlayerId(player.id);
+                setModalVisible(true);
+              }}
             />
           ))
         )}
       </ScrollView>
 
-      {/* Modal aggiunta giocatore */}
+      {/* Modal aggiunta/modifica giocatore */}
       <AddPlayerModal
         visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        onSave={handleAddPlayer}
+        onClose={() => {
+          setModalVisible(false);
+          setEditingPlayerId(null);
+        }}
+        onSave={editingPlayerId === null ? handleAddPlayer : handleEditPlayer}
         presetTeamId={teamId}
+        editPlayer={editingPlayerId !== null ? players.find(p => p.id === editingPlayerId) : undefined}
       />
     </SafeAreaView>
   );
@@ -248,6 +306,45 @@ const styles = StyleSheet.create({
   },
 
   list: { flex: 1, paddingHorizontal: 16, paddingTop: 16 },
+  
+  sortBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 4,
+  },
+  sortLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6b7280',
+    marginRight: 12,
+  },
+  sortButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    flex: 1,
+  },
+  sortBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    backgroundColor: '#ffffff',
+  },
+  sortBtnActive: {
+    backgroundColor: '#2e70b7ff',
+    borderColor: '#2e70b7ff',
+  },
+  sortBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  sortBtnTextActive: {
+    color: '#ffffff',
+  },
+  
   attendanceCta: {
     marginBottom: 14,
     paddingVertical: 12,

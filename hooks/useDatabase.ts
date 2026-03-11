@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import * as Crypto from 'expo-crypto';
-import * as Notifications from 'expo-notifications';
 
 import {
   initDatabase,
@@ -9,8 +8,8 @@ import {
   finesDB,
   trainingDB,
   statsDB,
-} from '@/database/database';
-import type { AttendanceStatus, TeamAttendanceRow, PlayerAttendanceSummary, PlayerAttendanceHistory } from '@/database/database';
+} from '@/database/database.supabase';
+import type { AttendanceStatus, TeamAttendanceRow, PlayerAttendanceSummary, PlayerAttendanceHistory } from '@/database/database.supabase';
 
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -50,7 +49,14 @@ type TeamInput = {
 
 export const useTeams = (deps: { enabled?: boolean } = {}) => {
   const { user } = useAuth();
-  const ownerUserId = user?.role === 'mister' ? user.id : null;
+  const ownerUserId = useMemo(() => {
+    if (user?.role !== 'mister') return null;
+    const rawId = (user.id ?? '').trim();
+    if (!rawId || rawId.toLowerCase() === 'null' || rawId.toLowerCase() === 'undefined') {
+      return null;
+    }
+    return rawId;
+  }, [user?.id, user?.role]);
 
   const enabled = (deps.enabled ?? true) && !!ownerUserId;
 
@@ -64,7 +70,7 @@ export const useTeams = (deps: { enabled?: boolean } = {}) => {
     }
     setLoading(true);
     try {
-      const data = await teamsDB.getAll(ownerUserId);
+      const data = await teamsDB.getAllByOwner(ownerUserId);
       setTeams(data);
     } catch (error) {
       console.error('Error loading teams:', error);
@@ -86,8 +92,9 @@ export const useTeams = (deps: { enabled?: boolean } = {}) => {
 
       const { password, ...rest } = teamData;
 
-      const id = await teamsDB.create(ownerUserId, {
+      const id = await teamsDB.create({
         ...rest,
+          owner_user_id: ownerUserId,
         password_hash,
       } as any);
 
@@ -103,7 +110,33 @@ export const useTeams = (deps: { enabled?: boolean } = {}) => {
   const deleteTeam = useCallback(
     async (id: number): Promise<boolean> => {
       if (!ownerUserId) return false;
-      const success = await teamsDB.delete(ownerUserId, id);
+      const success = await teamsDB.delete(id);
+      if (success) await loadTeams();
+      return success;
+    },
+    [ownerUserId, loadTeams]
+  );
+
+  const updateTeam = useCallback(
+    async (teamId: number, teamData: Partial<TeamInput>): Promise<boolean> => {
+      if (!ownerUserId) return false;
+
+      const updateData: any = { ...teamData };
+
+      // Se c'è una password, hashificare
+      if (teamData.password !== undefined) {
+        if (teamData.password) {
+          updateData.password_hash = await Crypto.digestStringAsync(
+            Crypto.CryptoDigestAlgorithm.SHA256,
+            teamData.password
+          );
+        } else {
+          updateData.password_hash = null;
+        }
+        delete updateData.password;
+      }
+
+      const success = await teamsDB.update(teamId, updateData);
       if (success) await loadTeams();
       return success;
     },
@@ -115,13 +148,13 @@ export const useTeams = (deps: { enabled?: boolean } = {}) => {
     else setLoading(false);
   }, [enabled, loadTeams]);
 
-  return { teams, loading, addTeam, deleteTeam, refreshTeams: loadTeams };
+  return { teams, loading, addTeam, deleteTeam, updateTeam, refreshTeams: loadTeams };
 };
 
 // ==================== PLAYERS (Mister) ====================
 type PlayerInput = {
   name: string;
-  number: string;
+  surname: string;
   position: string;
   team_id: number;
 };
@@ -146,8 +179,8 @@ export const usePlayers = (teamId?: number, deps: { enabled?: boolean } = {}) =>
       const hasTeam = typeof teamId === 'number' && teamId > 0;
 
       const data = hasTeam
-        ? await playersDB.getByTeam(teamId!, ownerUserId)
-        : await playersDB.getAll(ownerUserId);
+        ? await playersDB.getByTeam(teamId!)
+        : await playersDB.getAll();
 
       setPlayers(data);
     } catch (error) {
@@ -160,7 +193,7 @@ export const usePlayers = (teamId?: number, deps: { enabled?: boolean } = {}) =>
   const addPlayer = useCallback(
     async (playerData: PlayerInput): Promise<boolean> => {
       if (!ownerUserId) return false;
-      const id = await playersDB.create(ownerUserId, playerData);
+      const id = await playersDB.create(playerData);
       if (id) {
         await loadPlayers();
         return true;
@@ -173,7 +206,17 @@ export const usePlayers = (teamId?: number, deps: { enabled?: boolean } = {}) =>
   const deletePlayer = useCallback(
     async (id: number): Promise<boolean> => {
       if (!ownerUserId) return false;
-      const success = await playersDB.delete(ownerUserId, id);
+      const success = await playersDB.delete(id);
+      if (success) await loadPlayers();
+      return success;
+    },
+    [ownerUserId, loadPlayers]
+  );
+
+  const updatePlayer = useCallback(
+    async (playerId: number, playerData: Partial<{ name: string; surname: string; position: string }>): Promise<boolean> => {
+      if (!ownerUserId) return false;
+      const success = await playersDB.update(playerId, playerData);
       if (success) await loadPlayers();
       return success;
     },
@@ -185,7 +228,7 @@ export const usePlayers = (teamId?: number, deps: { enabled?: boolean } = {}) =>
     else setLoading(false);
   }, [enabled, loadPlayers]);
 
-  return { players, loading, addPlayer, deletePlayer, refreshPlayers: loadPlayers };
+  return { players, loading, addPlayer, deletePlayer, updatePlayer, refreshPlayers: loadPlayers };
 };
 
 // ==================== FINES (Mister + Player) ====================
@@ -226,7 +269,7 @@ export const useFines = (playerId?: number, deps: { enabled?: boolean } = {}) =>
     try {
       const data = readByPlayer
         ? await finesDB.getByPlayer(playerId!)
-        : await finesDB.getAll(ownerUserId!);
+        : await finesDB.getAll();
 
       setFines(data);
     } catch (error) {
@@ -243,7 +286,7 @@ export const useFines = (playerId?: number, deps: { enabled?: boolean } = {}) =>
     async (fineData: FineInput): Promise<number | null> => {
       if (!canMutate || !ownerUserId) return null;
 
-      const id = await finesDB.create(ownerUserId, fineData);
+      const id = await finesDB.create(fineData);
       if (id) {
         await loadFines();
         return id;
@@ -257,7 +300,7 @@ export const useFines = (playerId?: number, deps: { enabled?: boolean } = {}) =>
     async (id: number, isPaid: boolean): Promise<boolean> => {
       if (!canMutate || !ownerUserId) return false;
 
-      const ok = await finesDB.updatePaymentStatus(ownerUserId, id, isPaid);
+      const ok = await finesDB.update(id, { is_paid: isPaid, paid_at: isPaid ? new Date().toISOString() : null });
       if (ok) await loadFines();
       return ok;
     },
@@ -276,20 +319,7 @@ export const useFines = (playerId?: number, deps: { enabled?: boolean } = {}) =>
       if (!canMutate || !ownerUserId) return false;
 
       try {
-        const notifId = await finesDB.getNotificationId(ownerUserId, fineId);
-
-        if (notifId) {
-          try {
-            await Notifications.cancelScheduledNotificationAsync(notifId);
-          } catch (e) {
-            console.log('[NOTIF] cancel fine notif failed (ignored):', e);
-          }
-
-          // pulizia DB (così non rimane sporcizia inutilizzata)
-          await finesDB.setNotificationId(ownerUserId, fineId, null);
-        }
-
-        const ok = await finesDB.delete(ownerUserId, fineId);
+        const ok = await finesDB.delete(fineId);
         if (ok) await loadFines();
         return ok;
       } catch (e) {
@@ -335,7 +365,7 @@ export const useTeamAttendance = (
 
     setLoading(true);
     try {
-      const data = await trainingDB.getTeamAttendanceByDate(ownerUserId, teamId, sessionDate);
+      const data = await trainingDB.getTeamAttendanceForSession(teamId, sessionDate);
       setRows(data);
     } catch (error) {
       console.error('Error loading attendance:', error);
@@ -348,11 +378,12 @@ export const useTeamAttendance = (
     async (playerId: number, status: AttendanceStatus): Promise<boolean> => {
       if (!enabled || !ownerUserId || !teamId || !sessionDate) return false;
 
-      const ok = await trainingDB.setPlayerAttendance(ownerUserId, {
+      const ok = await trainingDB.setPlayerAttendance({
         team_id: teamId,
         session_date: sessionDate,
         player_id: playerId,
         status,
+        created_by: ownerUserId,
       });
 
       if (ok) await loadAttendance();
@@ -391,7 +422,7 @@ export const useTeamAttendancePublic = (
 
     setLoading(true);
     try {
-      const data = await trainingDB.getTeamAttendanceByDatePublic(teamId, sessionDate);
+      const data = await trainingDB.getTeamAttendanceForSession(teamId, sessionDate);
       setRows(data);
     } catch (error) {
       console.error('Error loading public attendance:', error);
@@ -455,7 +486,7 @@ export const usePlayerAttendanceHistory = (teamId?: number, playerId?: number) =
 
     setLoading(true);
     try {
-      const data = await trainingDB.getPlayerAttendanceHistory(teamId, playerId);
+      const data = await trainingDB.getPlayerAttendanceHistory(playerId);
       setHistory(data);
     } catch (error) {
       console.error('Error loading player attendance history:', error);
@@ -505,9 +536,7 @@ export const useDashboardStats = (deps: { enabled?: boolean } = {}) => {
 
     setLoading(true);
     try {
-      const raw: Partial<Record<string, unknown>> = await statsDB.getDashboardStats(
-        ownerUserId ?? undefined
-      );
+      const raw: Partial<Record<string, unknown>> = await statsDB.getDashboardStats(ownerUserId!);
 
       const total_amount = Number(raw?.total_amount ?? 0);
       const paid_amount = Number(raw?.paid_amount ?? 0);

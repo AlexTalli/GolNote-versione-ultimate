@@ -2,7 +2,7 @@ import { File } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as XLSX from 'xlsx-js-style';
-import { getDb } from '@/database/database';
+import { teamsDB, playersDB, finesDB } from '@/database/database';
 import type { AttendanceStatus } from '@/database/database';
 
 const STATUS_SHORT_MAP: Record<AttendanceStatus, string> = {
@@ -12,6 +12,8 @@ const STATUS_SHORT_MAP: Record<AttendanceStatus, string> = {
   absent_justified: 'AG',
   absent_unjustified: 'AI',
   sick: 'M',
+  malato: 'M',
+  riposo: 'R',
 };
 
 const STATUS_FULL_MAP: Record<AttendanceStatus, string> = {
@@ -21,6 +23,8 @@ const STATUS_FULL_MAP: Record<AttendanceStatus, string> = {
   absent_justified: 'Assente Giustificato',
   absent_unjustified: 'Assente Ingiustificato',
   sick: 'Malato',
+  malato: 'Malato',
+  riposo: 'Riposo',
 };
 
 function sanitizeFilename(name: string): string {
@@ -36,10 +40,40 @@ export async function exportMonthAttendanceXLSX(
   teamName: string,
   year: number,
   month: number,
-  players: Array<{ id: number; name: string; number: string; position: string }>,
+  players: Array<{ id: number; name: string; surname?: string | null; number?: string; position?: string }>,
   attendances: Array<{ player_id: number; date: string; status: AttendanceStatus }>
 ): Promise<void> {
   const daysInMonth = new Date(year, month, 0).getDate();
+
+  const parsePlayerName = (player: { name: string; surname?: string | null }) => {
+    const explicitSurname = player.surname?.trim();
+    if (explicitSurname) {
+      return {
+        surname: explicitSurname,
+        name: player.name?.trim() || '',
+      };
+    }
+
+    const raw = (player.name || '').trim();
+    const parts = raw.split(' ').filter(Boolean);
+    if (parts.length > 1) {
+      return {
+        surname: parts[parts.length - 1],
+        name: parts.slice(0, -1).join(' '),
+      };
+    }
+
+    return { surname: '', name: raw };
+  };
+
+  const sortedPlayers = [...players].sort((a, b) => {
+    const aParsed = parsePlayerName(a);
+    const bParsed = parsePlayerName(b);
+
+    const bySurname = aParsed.surname.localeCompare(bParsed.surname, 'it', { sensitivity: 'base' });
+    if (bySurname !== 0) return bySurname;
+    return aParsed.name.localeCompare(bParsed.name, 'it', { sensitivity: 'base' });
+  });
 
   const playerAttendanceMap = new Map<number, Map<number, AttendanceStatus>>();
   players.forEach((p) => {
@@ -57,20 +91,46 @@ export async function exportMonthAttendanceXLSX(
   // Prepare sheet data
   const monthName = new Date(year, month - 1).toLocaleString('it-IT', { month: 'long' });
   const titleRow = [`${teamName} - ${monthName} ${year}`];
-  const headerRow = ['Nome', 'Ruolo'];
+  const headerRow = ['Cognome', 'Nome'];
   for (let d = 1; d <= daysInMonth; d++) {
     headerRow.push(String(d));
   }
 
+  const recapColumns: AttendanceStatus[] = [
+    'present',
+    'late',
+    'absent_justified',
+    'absent_unjustified',
+    'injured',
+    'sick',
+  ];
+  recapColumns.forEach((status) => headerRow.push(STATUS_SHORT_MAP[status]));
+
   const dataRows: any[] = [titleRow, [], headerRow];
 
-  players.forEach((player) => {
-    const row: any[] = [player.name, player.position];
+  sortedPlayers.forEach((player) => {
+    const parsed = parsePlayerName(player);
+    const row: any[] = [parsed.surname, parsed.name];
     const playerMap = playerAttendanceMap.get(player.id);
+
+    const recapCount: Record<AttendanceStatus, number> = {
+      present: 0,
+      late: 0,
+      injured: 0,
+      absent_justified: 0,
+      absent_unjustified: 0,
+      sick: 0,
+      malato: 0,
+      riposo: 0,
+    };
+
     for (let d = 1; d <= daysInMonth; d++) {
       const status = playerMap?.get(d);
       row.push(status ? STATUS_SHORT_MAP[status] : '');
+      if (status) recapCount[status] += 1;
     }
+
+    recapColumns.forEach((status) => row.push(recapCount[status]));
     dataRows.push(row);
   });
 
@@ -107,10 +167,10 @@ export async function exportMonthAttendanceXLSX(
 
   // Apply styles to cells
   ws['A1']!.s = titleCellStyle;
-  ws.merge_cells = [{ s: { r: 0, c: 0 }, e: { r: 0, c: daysInMonth + 1 } }];
+  ws.merge_cells = [{ s: { r: 0, c: 0 }, e: { r: 0, c: daysInMonth + 1 + recapColumns.length } }];
 
   // Header row
-  for (let col = 0; col <= daysInMonth + 1; col++) {
+  for (let col = 0; col <= daysInMonth + 1 + recapColumns.length; col++) {
     const cellRef = XLSX.utils.encode_col(col) + '3';
     if (ws[cellRef]) {
       ws[cellRef].s = headerCellStyle;
@@ -119,7 +179,7 @@ export async function exportMonthAttendanceXLSX(
 
   // Data cells with borders
   for (let row = 3; row < dataRows.length; row++) {
-    for (let col = 0; col <= daysInMonth + 1; col++) {
+    for (let col = 0; col <= daysInMonth + 1 + recapColumns.length; col++) {
       const cellRef = XLSX.utils.encode_col(col) + (row + 1);
       if (ws[cellRef]) {
         ws[cellRef].s = cellBorderStyle;
@@ -132,6 +192,7 @@ export async function exportMonthAttendanceXLSX(
   for (let d = 0; d < daysInMonth; d++) {
     colWidths.push({ wch: 8 });
   }
+  recapColumns.forEach(() => colWidths.push({ wch: 6 }));
   ws['!cols'] = colWidths;
 
   // Add legend at bottom
@@ -330,54 +391,43 @@ export async function exportTeamRosterXLSX(
 /* ========== MISTER FINES XLSX ========== */
 
 export async function exportMisterFinesXLSX(
-  ownerId: number,
+  ownerId: string,
   teamId?: number,
   teamName?: string
 ): Promise<void> {
   console.log('[exportMisterFinesXLSX] Start - ownerId:', ownerId, 'teamId:', teamId);
-  
-  const db = await getDb();
-  console.log('[exportMisterFinesXLSX] DB acquired');
 
-  const params: any[] = [ownerId];
-  let extraTeamFilter = '';
-
+  let teams;
   if (typeof teamId === 'number' && teamId > 0) {
-    extraTeamFilter = ' AND t.id = ?';
-    params.push(teamId);
+    // Esporta solo multe di questo team
+    const team = await teamsDB.getById(teamId);
+    teams = team ? [team] : [];
+  } else {
+    // Esporta multe di tutte le squadre del mister
+    teams = await teamsDB.getAllByOwner(ownerId);
   }
 
-  console.log('[exportMisterFinesXLSX] Querying DB with params:', params);
-  
-  const rows = await db.getAllAsync<{
-    id: number;
-    player_id: number;
-    type: string;
-    amount: number;
-    description?: string | null;
-    due_date: string;
-    is_paid: 0 | 1;
-    paid_at?: string | null;
-    created_at: string;
-    player_name?: string | null;
-    player_number?: string | null;
-    team_name?: string | null;
-  }>(
-    `
-    SELECT f.*,
-           p.name   AS player_name,
-           p.number AS player_number,
-           t.name   AS team_name
-    FROM fines f
-    JOIN players p ON f.player_id = p.id
-    JOIN teams   t ON p.team_id = t.id
-    WHERE t.owner_user_id = ?${extraTeamFilter}
-    ORDER BY f.created_at DESC;
-    `,
-    params
-  );
-  
-  console.log('[exportMisterFinesXLSX] Query returned', rows.length, 'rows');
+  console.log('[exportMisterFinesXLSX] Teams found:', teams.length);
+
+  // Raccogliamo tutte le multe con i dati dei giocatori
+  const allFines = [];
+  for (const team of teams) {
+    const teamFines = await finesDB.getByTeam(team.id);
+    allFines.push(...teamFines);
+  }
+
+  console.log('[exportMisterFinesXLSX] Total fines:', allFines.length);
+
+  // Ordina per team, poi per cognome giocatore, poi per data creazione multa
+  allFines.sort((a, b) => {
+    const teamCompare = (a.team_name || '').localeCompare(b.team_name || '', 'it', { sensitivity: 'base' });
+    if (teamCompare !== 0) return teamCompare;
+
+    const playerCompare = (a.player_name || '').localeCompare(b.player_name || '', 'it', { sensitivity: 'base' });
+    if (playerCompare !== 0) return playerCompare;
+
+    return (b.created_at || '').localeCompare(a.created_at || '');
+  });
 
   const formatDate = (isoLike: string | null | undefined) => {
     if (!isoLike) return '';
@@ -401,10 +451,25 @@ export async function exportMisterFinesXLSX(
     return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
   };
 
+  const formatPlayerName = (name?: string | null, surname?: string | null) => {
+    const cleanName = (name || '').trim();
+    const cleanSurname = (surname || '').trim();
+
+    if (cleanSurname) return `${cleanSurname}, ${cleanName}`;
+
+    const parts = cleanName.split(' ').filter(Boolean);
+    if (parts.length > 1) {
+      const extractedSurname = parts[parts.length - 1];
+      const extractedName = parts.slice(0, -1).join(' ');
+      return `${extractedSurname}, ${extractedName}`;
+    }
+
+    return cleanName;
+  };
+
   const headerRow = [
     'Squadra',
     'Giocatore',
-    'Numero',
     'Tipo multa',
     'Importo (€)',
     'Data scadenza',
@@ -415,17 +480,16 @@ export async function exportMisterFinesXLSX(
 
   const dataRows: any[] = [headerRow];
 
-  rows.forEach((r: any) => {
+  allFines.forEach((fine) => {
     dataRows.push([
-      r.team_name || '',
-      r.player_name || '',
-      r.player_number || '',
-      r.type || '',
-      r.amount,
-      formatDate(r.due_date),
-      r.is_paid ? 'Sì' : 'No',
-      formatDateTime(r.paid_at),
-      formatDateTime(r.created_at),
+      fine.team_name || '',
+      fine.player_name || '',
+      fine.type || '',
+      fine.amount,
+      formatDate(fine.due_date),
+      fine.is_paid ? 'Sì' : 'No',
+      formatDateTime(fine.paid_at),
+      formatDateTime(fine.created_at),
     ]);
   });
 
@@ -475,7 +539,7 @@ export async function exportMisterFinesXLSX(
     for (let col = 0; col < headerRow.length; col++) {
       const cellRef = XLSX.utils.encode_col(col) + (row + 1);
       if (ws[cellRef]) {
-        ws[cellRef].s = col === 4 ? amountCellStyle : cellBorderStyle;
+        ws[cellRef].s = col === 3 ? amountCellStyle : cellBorderStyle;
       }
     }
   }
@@ -483,8 +547,7 @@ export async function exportMisterFinesXLSX(
   // Column widths
   ws['!cols'] = [
     { wch: 20 },
-    { wch: 25 },
-    { wch: 10 },
+    { wch: 30 },
     { wch: 18 },
     { wch: 12 },
     { wch: 15 },

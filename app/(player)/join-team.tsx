@@ -11,17 +11,17 @@ import {
   Modal,
   Alert,
 } from 'react-native';
-import { Lock, Search, Eye, EyeOff, Users } from 'lucide-react-native';
+import { Lock, Search, Eye, EyeOff, Users, Trash2 } from 'lucide-react-native';
 import { useTeamSearch, useCheckTeamPassword } from '@/hooks/usePlayerTeam';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRole } from '@/contexts/RoleContext';
-import { playersDB, type Player } from '@/database/database'; 
+import { playersDB, usersDB, type Player } from '@/database/database.supabase'; 
 
 // Schermata per giocatori: cerca e unisciti a una squadra
 export default function JoinTeamScreen() {
   const router = useRouter();
-  const { user, setUser } = useAuth();
+  const { user, setUser, logout } = useAuth();
   const { setPlayerIdentity } = useRole();
   const { query, setQuery, results, loading } = useTeamSearch(); // Hook per ricerca squadre
   const { verify } = useCheckTeamPassword(); // Hook per verifica password
@@ -62,25 +62,16 @@ export default function JoinTeamScreen() {
     }
   }, [selectedTeamId]);
 
-  // Sorting dei giocatori per ruolo e nome
+  // Sorting dei giocatori per cognome e nome
   const sortedTeamPlayers = useMemo(() => {
-    const POSITION_ORDER: Record<string, number> = {
-      portiere: 0,
-      difensore: 1,
-      centrocampista: 2,
-      attaccante: 3,
-    };
-
     return [...teamPlayers].sort((a, b) => {
-      const posA = POSITION_ORDER[a.position?.toLowerCase()] ?? 99;
-      const posB = POSITION_ORDER[b.position?.toLowerCase()] ?? 99;
-
-      // 1️⃣ Ordine per ruolo
-      if (posA !== posB) {
-        return posA - posB;
-      }
-
-      // 2️⃣ Stesso ruolo → ordine alfabetico
+      // Ordine per cognome, poi nome
+      const surnameA = a.surname || a.name.split(' ').pop() || a.name;
+      const surnameB = b.surname || b.name.split(' ').pop() || b.name;
+      
+      const bySurname = surnameA.localeCompare(surnameB, 'it', { sensitivity: 'base' });
+      if (bySurname !== 0) return bySurname;
+      
       return a.name.localeCompare(b.name, 'it', { sensitivity: 'base' });
     });
   }, [teamPlayers]);
@@ -107,7 +98,7 @@ export default function JoinTeamScreen() {
     
     try {
       // Collega l'utente al giocatore nel database
-      const { usersDB } = await import('@/database/database');
+      const { usersDB } = await import('@/database/database.supabase');
       await usersDB.linkPlayer(user.id, playerId);
       
       // Aggiorna il context e la sessione
@@ -162,14 +153,41 @@ export default function JoinTeamScreen() {
     }
   };
 
+  // Elimina account anche se il player non è associato a una squadra
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Elimina Account',
+      'Sei sicuro di voler eliminare il tuo account? Questa azione è irreversibile.',
+      [
+        { text: 'Annulla', style: 'cancel' },
+        {
+          text: 'Elimina',
+          style: 'destructive',
+          onPress: async () => {
+            if (!user) return;
+            try {
+              await usersDB.deleteAccount(user.id);
+              await logout();
+              setPlayerIdentity({ playerId: null });
+              router.replace('/');
+            } catch (error) {
+              console.error('Error deleting account:', error);
+              Alert.alert('Errore', 'Impossibile eliminare l\'account.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={s.container}>
       {/* Header */}
       <View style={s.header}>
         
         {/* Saluto personalizzato con nickname */}
-        {user?.nickname && (
-          <Text style={s.greeting}>Ciao, {user.nickname} !</Text>
+        {(user?.displayNickname || user?.nickname) && (
+          <Text style={s.greeting}>Ciao, {user?.displayNickname ?? user?.nickname} !</Text>
         )}
 
         <Text style={s.title}>Cerca la tua Squadra</Text>
@@ -229,6 +247,12 @@ export default function JoinTeamScreen() {
       {/* Pulsante back alla selezione ruolo */}
       <TouchableOpacity onPress={() => router.replace('/')}>
         <Text style={s.backText}>← Torna alla selezione ruolo</Text>
+      </TouchableOpacity>
+
+      {/* Elimina account anche da schermata join-team */}
+      <TouchableOpacity style={s.deleteAccountBtn} onPress={handleDeleteAccount}>
+        <Trash2 size={16} color="#ef4444" />
+        <Text style={s.deleteAccountText}>Elimina account</Text>
       </TouchableOpacity>
 
       {/* Modal per inserire password */}
@@ -316,19 +340,20 @@ export default function JoinTeamScreen() {
                 data={sortedTeamPlayers}
                 keyExtractor={(item) => String(item.id)}
                 style={{ maxHeight: 400 }}
-                renderItem={({ item }) => {
+                renderItem={({ item, index }) => {
                   const isTaken = (item.is_taken ?? 0) > 0;
+                  const fullName = item.surname ? `${item.surname} ${item.name}` : item.name;
                   return (
                     <TouchableOpacity
                       style={[s.playerRow, isTaken && s.playerRowDisabled]}
                       onPress={() => selectPlayer(item.id, isTaken)}
                     >
                       <View style={[s.playerNumber, isTaken && s.playerNumberDisabled]}>
-                        <Text style={s.playerNumberText}>{item.number}</Text>
+                        <Text style={s.playerNumberText}>#{index + 1}</Text>
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={[s.playerName, isTaken && s.playerNameDisabled]}>
-                          {item.name}
+                          {fullName}
                         </Text>
                         <Text style={s.playerPosition}>{item.position}</Text>
                       </View>
@@ -561,5 +586,25 @@ const s = StyleSheet.create({
     marginTop: 16,
     textDecorationLine: 'underline',
     textAlign: 'center',
+  },
+
+  deleteAccountBtn: {
+    marginTop: 10,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    backgroundColor: '#fef2f2',
+  },
+
+  deleteAccountText: {
+    color: '#ef4444',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

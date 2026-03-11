@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { ChevronRight, Users, CircleAlert as AlertCircle, Trash2 } from 'lucide-react-native';
+import { ChevronRight, Users, CircleAlert as AlertCircle, Trash2, Edit } from 'lucide-react-native';
 
 /* ========== INTERFACCE ========== */
 
@@ -17,12 +17,13 @@ interface Team {
 interface TeamCardProps {
   team: Team;
   onPress: () => void; // Funzione chiamata quando si preme la card
+  onEdit?: () => void; // Funzione opzionale per modificare la squadra
   onDelete?: () => void; // Funzione opzionale per eliminare la squadra
 }
 
 /* ========== COMPONENTE ========== */
 
-export function TeamCard({ team, onPress, onDelete }: TeamCardProps) {
+export function TeamCard({ team, onPress, onEdit, onDelete }: TeamCardProps) {
   /* ========== RENDERING ========== */
 
   return (
@@ -31,11 +32,25 @@ export function TeamCard({ team, onPress, onDelete }: TeamCardProps) {
       <View style={[styles.colorBar, { backgroundColor: team.color }]} />
 
       <View style={styles.content}>
-        {/* Header con nome squadra, cestino e freccia */}
+        {/* Header con nome squadra, pulsanti edit/delete e freccia */}
         <View style={styles.header}>
           <Text style={styles.teamName}>{team.name}</Text>
 
           <View style={styles.headerButtons}>
+            {/* Pulsante matita per modificare la squadra */}
+            {onEdit && (
+              <TouchableOpacity
+                onPress={(e) => {
+                  e.stopPropagation();
+                  onEdit();
+                }}
+                style={styles.editBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Edit size={18} color="#daa520" />
+              </TouchableOpacity>
+            )}
+
             {/* Pulsante cestino per eliminare la squadra (se fornito) */}
             {onDelete && (
               <TouchableOpacity
@@ -119,6 +134,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+  },
+  editBtn: {
+    marginRight: 4,
   },
   trashBtn: {
     marginRight: 4,

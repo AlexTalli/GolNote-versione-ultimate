@@ -1,0 +1,1669 @@
+// @ts-nocheck
+export * from './database.supabase';
+
+export * from './database.supabase';
+
+/* =========================
+ *        TIPI
+ * ========================= */
+export type User = {
+  id: number;
+  role: 'mister' | 'player';
+  nickname: string;
+  display_nickname?: string | null;
+  password_hash: string;
+  player_id?: number | null;
+  created_at: string;
+};
+
+export type Team = {
+  id: number;
+  name: string;
+  description?: string | null;
+  color: string;
+  owner_user_id: number | null; 
+  created_at: string;
+  password_hash?: string | null;
+};
+
+export type Player = {
+  id: number;
+  name: string;
+  surname?: string;
+  number: string;
+  position: string;
+  team_id?: number | null;
+  team_name?: string | null;
+  team_color?: string | null;
+  created_at: string;
+  active_fines?: number;
+  total_unpaid?: number;
+  is_taken?: number; // 0 = disponibile, >0 = già associato a un utente
+};
+
+export type Fine = {
+  id: number;
+  player_id: number;
+  type: string;
+  amount: number;
+  description?: string | null;
+  due_date: string; // YYYY-MM-DD
+  is_paid: 0 | 1;
+  paid_at?: string | null;
+  created_at: string;
+  notification_id?: string | null;
+  player_name?: string;
+  player_number?: string;
+  team_name?: string;
+  team_color?: string;
+};
+
+export type PlayerAttendanceSummary = {
+  present: number;
+  late: number;
+  injured: number;
+  absent_justified: number;
+  absent_unjustified: number;
+  sick: number;
+  total_sessions: number;
+};
+
+export type PlayerAttendanceHistory = {
+  date: string; // YYYY-MM-DD
+  status: AttendanceStatus;
+};
+
+export type AttendanceStatus =
+  | 'present'
+  | 'late'
+  | 'injured'
+  | 'absent_justified'
+  | 'absent_unjustified'
+  | 'sick';
+
+export type TeamAttendanceRow = {
+  player_id: number;
+  player_name: string;
+  player_first_name?: string;
+  player_surname?: string;
+  player_number: string;
+  player_position: string;
+  attendance_status: AttendanceStatus | null;
+};
+
+/* =========================
+ *     INTERFACCIA ASYNC
+ * ========================= */
+type RunResult = { lastInsertRowId?: number };
+type AsyncDB = {
+  execAsync: (sql: string, params?: any[]) => Promise<void>;
+  runAsync: (sql: string, params?: any[]) => Promise<RunResult>;
+  getAllAsync: <T = any>(sql: string, params?: any[]) => Promise<T[]>;
+  getFirstAsync: <T = any>(sql: string, params?: any[]) => Promise<T | null>;
+};
+
+/* =========================
+ *      DB FACTORY
+ * ========================= */
+let dbPromise: Promise<AsyncDB> | null = null;
+
+async function makeDb(): Promise<AsyncDB> {
+  const openAsync = (SQLite as any).openDatabaseAsync;
+
+  if (typeof openAsync !== 'function') {
+    throw new Error(
+      'openDatabaseAsync non disponibile. Aggiorna Expo/expo-sqlite oppure reinstalla il fallback legacy.'
+    );
+  }
+
+  const db = await openAsync('fines_management.db');
+  return db as AsyncDB;
+}
+
+export const getDb = () => (dbPromise ??= makeDb());
+
+/* =========================
+ *     INIT DATABASE
+ * ========================= */
+export const initDatabase = async () => {
+  const db = await getDb();
+
+  try {
+    await db.execAsync(`PRAGMA foreign_keys = ON;`);
+
+    // USERS
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        role TEXT NOT NULL CHECK(role IN ('mister','player')),
+        nickname TEXT NOT NULL UNIQUE,
+        display_nickname TEXT,
+        password_hash TEXT NOT NULL,
+        player_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (player_id) REFERENCES players (id) ON DELETE SET NULL
+      );
+    `);
+    await db.execAsync(`CREATE UNIQUE INDEX IF NOT EXISTS ux_users_nickname ON users(nickname);`);
+
+    // Migrazione nickname visualizzato (se manca la colonna o è NULL)
+    await db.execAsync(`
+      ALTER TABLE users ADD COLUMN display_nickname TEXT;
+    `).catch(() => {});
+    await db.runAsync(
+      `UPDATE users SET display_nickname = nickname WHERE display_nickname IS NULL OR TRIM(display_nickname) = ''`
+    );
+
+    // TEAMS 
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS teams (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        color TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    
+    // Aggiungi colonna owner_user_id
+    await db.execAsync(`
+      ALTER TABLE teams ADD COLUMN owner_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+    `).catch(() => {}); // ignora se già esiste
+    await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_teams_owner ON teams(owner_user_id);`);
+
+    // Aggiungi colonna password_hash 
+    await db.execAsync(`
+      ALTER TABLE teams ADD COLUMN password_hash TEXT;
+    `).catch(() => {}); // ignora se già esiste
+
+    // NOME UNIVOCO
+    await db.execAsync(`
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_teams_owner_name
+      ON teams (owner_user_id, name COLLATE NOCASE);
+    `);
+
+
+    // PLAYERS
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS players (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        number TEXT NOT NULL,
+        position TEXT NOT NULL,
+        team_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE SET NULL
+      );
+    `);
+
+    // Add surname column to players (migration)
+    await db.execAsync(`
+      ALTER TABLE players ADD COLUMN surname TEXT DEFAULT '';
+    `).catch(() => {}); // ignore if already exists
+
+    // FINES
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS fines (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        amount REAL NOT NULL,
+        description TEXT,
+        due_date TEXT NOT NULL,            -- YYYY-MM-DD
+        is_paid INTEGER DEFAULT 0,         -- 0/1
+        paid_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (player_id) REFERENCES players (id) ON DELETE CASCADE
+      );
+    `);
+
+    // Aggiungi colonna notification_id 
+    await db.execAsync(`
+      ALTER TABLE fines ADD COLUMN notification_id TEXT;
+    `).catch(() => {}); // ignora se già esiste
+
+    await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_fines_notif ON fines(notification_id);`);
+        
+    // INDICI
+    await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_players_team ON players (team_id);`);
+    await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_fines_player ON fines (player_id);`);
+    await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_fines_paid ON fines (is_paid, due_date);`);
+
+    // TRAINING SESSIONS
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS training_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        team_id INTEGER NOT NULL,
+        session_date TEXT NOT NULL,          -- YYYY-MM-DD
+        title TEXT,
+        note TEXT,
+        created_by INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE CASCADE,
+        FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL,
+        UNIQUE(team_id, session_date)
+      );
+    `);
+
+    // ATTENDANCE RECORDS
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS attendance_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        player_id INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK(status IN (
+          'present',
+          'late',
+          'injured',
+          'absent_justified',
+          'absent_unjustified',
+          'sick'
+        )),
+        note TEXT,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (session_id) REFERENCES training_sessions (id) ON DELETE CASCADE,
+        FOREIGN KEY (player_id) REFERENCES players (id) ON DELETE CASCADE,
+        UNIQUE(session_id, player_id)
+      );
+    `);
+
+    await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_training_team_date ON training_sessions(team_id, session_date);`);
+    await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_attendance_session ON attendance_records(session_id);`);
+    await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_attendance_player ON attendance_records(player_id);`);
+
+    // Niente seed di team globali: ogni mister crea i propri team
+    console.log('Database initialized successfully');
+  } catch (error) {
+    console.error('Error initializing database:', error);
+  }
+};
+
+/* =========================
+ *        USERS DB
+ * ========================= */
+export const usersDB = {
+  create: async (u: {
+    role: 'mister' | 'player';
+    nickname: string;
+    display_nickname?: string;
+    password_hash: string;
+    player_id?: number | null;
+  }) => {
+    const db = await getDb();
+    const res = await db.runAsync(
+      `INSERT INTO users (role, nickname, display_nickname, password_hash, player_id)
+       VALUES (?, ?, ?, ?, ?)`,
+      [u.role, u.nickname, u.display_nickname ?? u.nickname, u.password_hash, u.player_id ?? null]
+    );
+    return res.lastInsertRowId ?? null;
+  },
+
+  findByNickname: async (nickname: string) => {
+    const db = await getDb();
+    return await db.getFirstAsync<User>(
+      `SELECT * FROM users WHERE nickname = ?`,
+      [nickname]
+    );
+  },
+
+  linkPlayer: async (userId: number, playerId: number | null) => {
+    const db = await getDb();
+    await db.runAsync(
+      `UPDATE users SET player_id = ? WHERE id = ?`,
+      [playerId, userId]
+    );
+    return true;
+  },
+
+  unlinkPlayer: async (userId: number) => {
+    const db = await getDb();
+    try {
+      await db.runAsync(`UPDATE users SET player_id = NULL WHERE id = ?`, [userId]);
+      return true;
+    } catch (error) {
+      console.error('Error unlinking player:', error);
+      return false;
+    }
+  },
+
+  deleteAccount: async (userId: number) => {
+    const db = await getDb();
+    try {
+      await db.runAsync(`DELETE FROM users WHERE id = ?`, [userId]);
+      return true;
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      return false;
+    }
+  },
+
+  findById: async (id: number) => {
+    const db = await getDb();
+    return await db.getFirstAsync<User>(
+      `SELECT * FROM users WHERE id = ?`,
+      [id]
+    );
+  },
+
+  updateDisplayNickname: async (userId: number, displayNickname: string) => {
+    const db = await getDb();
+    try {
+      await db.runAsync(
+        `UPDATE users SET display_nickname = ? WHERE id = ?`,
+        [displayNickname.trim(), userId]
+      );
+      return true;
+    } catch (error) {
+      console.error('Error updating display nickname:', error);
+      return false;
+    }
+  },
+};
+
+/* =========================
+ *        TEAMS DB
+ * ========================= */
+export const teamsDB = {
+  // tutte le squadre del mister
+  getAll: async (ownerId: number): Promise<(Team & { players_count: number; active_fines: number })[]> => {
+    const db = await getDb();
+    try {
+      return await db.getAllAsync(
+        `
+        SELECT t.*,
+               t.password_hash,
+               COUNT(DISTINCT p.id) AS players_count,
+               COUNT(CASE WHEN f.is_paid = 0 THEN 1 END) AS active_fines
+        FROM teams t
+        LEFT JOIN players p ON t.id = p.team_id
+        LEFT JOIN fines   f ON p.id = f.player_id
+        WHERE t.owner_user_id = ?
+        GROUP BY t.id
+        ORDER BY t.created_at ASC;
+        `,
+        [ownerId]
+      );
+    } catch (error) {
+      console.error('Error getting teams:', error);
+      return [];
+    }
+  },
+
+  getAllNames: async (ownerId: number): Promise<{ id: number; name: string }[]> => {
+    const db = await getDb();
+    try {
+      return await db.getAllAsync(
+        `
+        SELECT id, name
+        FROM teams
+        WHERE owner_user_id = ?
+        ORDER BY name ASC;
+        `,
+        [ownerId]
+      );
+    } catch (error) {
+      console.error('Error getting team names:', error);
+      return [];
+    }
+  },
+
+  create: async (
+    ownerId: number,
+    team: { name: string; description: string; color: string; password_hash?: string | null }
+  ) => {
+    const db = await getDb();
+    try {
+      const trimmedName = team.name.trim();
+      const existing = await db.getFirstAsync<{ id: number }>(
+        `
+        SELECT id
+        FROM teams
+        WHERE LOWER(name) = LOWER(?);
+        `,
+        [trimmedName]
+      );
+
+      if (existing) {
+        console.warn('Team name already used (global):', trimmedName);
+        // restituiamo null così l'hook `useTeams.addTeam` sa che non è andata
+        return null;
+      }
+
+      const result = await db.runAsync(
+        `INSERT INTO teams (name, description, color, owner_user_id, password_hash)
+         VALUES (?, ?, ?, ?, ?)`,
+        [trimmedName, team.description, team.color, ownerId, team.password_hash ?? null]
+      );
+      return result.lastInsertRowId ?? null;
+    } catch (error) {
+      console.error('Error creating team:', error);
+      return null;
+    }
+  },
+
+delete: async (ownerId: number, id: number) => {
+  const db = await getDb();
+  try {
+    // 0) Recupera ID delle multe per cancellare notifiche
+    const fineIds = await db.getAllAsync<{ id: number }>(
+      `
+      SELECT f.id
+      FROM fines f
+      JOIN players p ON f.player_id = p.id
+      JOIN teams t ON p.team_id = t.id
+      WHERE t.id = ? AND t.owner_user_id = ?
+      `,
+      [id, ownerId]
+    );
+
+    // Cancella notifiche
+    for (const { id: fineId } of fineIds) {
+      await cancelFineDueNotificationByFineId(fineId);
+    }
+
+    // 1) Elimina tutte le multe dei giocatori della squadra (solo se la squadra è del mister)
+    await db.runAsync(
+      `
+      DELETE FROM fines
+      WHERE player_id IN (
+        SELECT p.id
+        FROM players p
+        JOIN teams t ON p.team_id = t.id
+        WHERE t.id = ? AND t.owner_user_id = ?
+      );
+      `,
+      [id, ownerId]
+    );
+
+    // 2) Elimina tutti i giocatori della squadra (sempre solo di quel mister)
+    await db.runAsync(
+      `
+      DELETE FROM players
+      WHERE team_id IN (
+        SELECT t.id
+        FROM teams t
+        WHERE t.id = ? AND t.owner_user_id = ?
+      );
+      `,
+      [id, ownerId]
+    );
+
+    // 3) Elimina la squadra
+    await db.runAsync(
+      `
+      DELETE FROM teams
+      WHERE id = ? AND owner_user_id = ?;
+      `,
+      [id, ownerId]
+    );
+
+    return true;
+  } catch (error) {
+    console.error('Error deleting team:', error);
+    return false;
+  }
+},
+
+    // cerca squadre per nome (case-insensitive)
+  search: async (query: string): Promise<Team[]> => {
+    const db = await getDb();
+    const like = `%${query.toLowerCase()}%`;
+    return await db.getAllAsync<Team>(
+      `
+      SELECT id, name, description, color, owner_user_id, created_at, password_hash
+      FROM teams
+      WHERE LOWER(name) LIKE ?
+      ORDER BY name ASC
+      LIMIT 30;
+      `,
+      [like]
+    );
+  },
+
+  // dettaglio singola squadra
+  getById: async (id: number): Promise<Team | null> => {
+    const db = await getDb();
+    return await db.getFirstAsync<Team>(
+      `SELECT id, name, description, color, owner_user_id, created_at, password_hash
+       FROM teams WHERE id = ?`,
+      [id]
+    );
+  },
+
+  // verifica lato DB: ok se nessuna password, oppure hash combacia
+  checkPassword: async (teamId: number, passwordHash: string): Promise<boolean> => {
+    const db = await getDb();
+    const row = await db.getFirstAsync<{ id: number }>(
+      `
+      SELECT id
+      FROM teams
+      WHERE id = ?
+        AND (password_hash IS NULL OR password_hash = ?)
+      `,
+      [teamId, passwordHash]
+    );
+    return !!row;
+  },
+
+  // modifica squadra
+  update: async (
+    ownerId: number,
+    teamId: number,
+    team: { name?: string; description?: string; color?: string; password_hash?: string | null }
+  ): Promise<boolean> => {
+    const db = await getDb();
+    try {
+      // Se il nome cambio, verifico che non sia già usato
+      if (team.name) {
+        const trimmedName = team.name.trim();
+        const existing = await db.getFirstAsync<{ id: number }>(
+          `
+          SELECT id
+          FROM teams
+          WHERE LOWER(name) = LOWER(?) AND id != ?;
+          `,
+          [trimmedName, teamId]
+        );
+
+        if (existing) {
+          console.warn('Team name already used:', trimmedName);
+          return false;
+        }
+      }
+
+      // Costruisci la query di update dinamicamente
+      const updates: string[] = [];
+      const params: any[] = [];
+
+      if (team.name !== undefined) {
+        updates.push('name = ?');
+        params.push(team.name.trim());
+      }
+      if (team.description !== undefined) {
+        updates.push('description = ?');
+        params.push(team.description);
+      }
+      if (team.color !== undefined) {
+        updates.push('color = ?');
+        params.push(team.color);
+      }
+      if (team.password_hash !== undefined) {
+        updates.push('password_hash = ?');
+        params.push(team.password_hash);
+      }
+
+      if (updates.length === 0) return true; // Nulla da aggiornare
+
+      // Aggiungi i parametri per la WHERE clause
+      params.push(teamId);
+      params.push(ownerId);
+
+      await db.runAsync(
+        `
+        UPDATE teams
+        SET ${updates.join(', ')}
+        WHERE id = ? AND owner_user_id = ?;
+        `,
+        params
+      );
+
+      return true;
+    } catch (error) {
+      console.error('Error updating team:', error);
+      return false;
+    }
+  },
+
+};
+
+/* =========================
+ *       PLAYERS DB
+ * ========================= */
+export const playersDB = {
+  // tutti i players delle squadre del mister
+  getAll: async (ownerId: number): Promise<Player[]> => {
+    const db = await getDb();
+    try {
+      return await db.getAllAsync(
+        `
+        SELECT p.*,
+               t.name  AS team_name,
+               t.color AS team_color,
+               COUNT(CASE WHEN f.is_paid = 0 THEN 1 END)                   AS active_fines,
+               COALESCE(SUM(CASE WHEN f.is_paid = 0 THEN f.amount END), 0) AS total_unpaid
+        FROM players p
+        JOIN teams t ON p.team_id = t.id
+        LEFT JOIN fines f ON p.id = f.player_id
+        WHERE t.owner_user_id = ?
+        GROUP BY p.id
+        ORDER BY p.name ASC;
+      `,
+        [ownerId]
+      );
+    } catch (error) {
+      console.error('Error getting players:', error);
+      return [];
+    }
+  },
+
+  // players di un team del mister
+  getByTeam: async (teamId: number, ownerId: number): Promise<Player[]> => {
+    const db = await getDb();
+    try {
+      return await db.getAllAsync(
+        `
+        SELECT p.*,
+               t.name  AS team_name,
+               t.color AS team_color,
+               COUNT(CASE WHEN f.is_paid = 0 THEN 1 END)                   AS active_fines,
+               COALESCE(SUM(CASE WHEN f.is_paid = 0 THEN f.amount END), 0) AS total_unpaid
+        FROM players p
+        JOIN teams t ON p.team_id = t.id
+        LEFT JOIN fines f ON p.id = f.player_id
+        WHERE p.team_id = ? AND t.owner_user_id = ?
+        GROUP BY p.id
+        ORDER BY p.name ASC;
+      `,
+        [teamId, ownerId]
+      );
+    } catch (error) {
+      console.error('Error getting players by team:', error);
+      return [];
+    }
+  },
+
+  create: async (ownerId: number, player: { name: string; surname: string; position: string; team_id: number }) => {
+    const db = await getDb();
+    try {
+      // verifica che il team appartenga al mister
+      const team = await db.getFirstAsync<{ id: number }>(
+        `SELECT id FROM teams WHERE id = ? AND owner_user_id = ?`,
+        [player.team_id, ownerId]
+      );
+      if (!team) return null;
+
+      // Auto-generate number: get max number in team and increment
+      const maxNumber = await db.getFirstAsync<{ max_num: number | null }>(
+        `SELECT MAX(CAST(number AS INTEGER)) AS max_num FROM players WHERE team_id = ?`,
+        [player.team_id]
+      );
+      const nextNumber = (maxNumber?.max_num ?? 0) + 1;
+
+      const result = await db.runAsync(
+        'INSERT INTO players (name, surname, number, position, team_id) VALUES (?, ?, ?, ?, ?)',
+        [player.name, player.surname, String(nextNumber), player.position, player.team_id]
+      );
+      return result.lastInsertRowId ?? null;
+    } catch (error) {
+      console.error('Error creating player:', error);
+      return null;
+    }
+  },
+
+delete: async (ownerId: number, id: number) => {
+  const db = await getDb();
+  try {
+    // 0) Recupera ID delle multe per cancellare notifiche
+    const fineIds = await db.getAllAsync<{ id: number }>(
+      `
+      SELECT f.id
+      FROM fines f
+      JOIN players p ON f.player_id = p.id
+      JOIN teams t ON p.team_id = t.id
+      WHERE p.id = ? AND t.owner_user_id = ?
+      `,
+      [id, ownerId]
+    );
+
+    // Cancella notifiche
+    for (const { id: fineId } of fineIds) {
+      await cancelFineDueNotificationByFineId(fineId);
+    }
+
+    // 1) Cancello tutte le multe del giocatore, solo se appartiene a un team del mister
+    await db.runAsync(
+      `
+      DELETE FROM fines
+      WHERE player_id IN (
+        SELECT p.id
+        FROM players p
+        JOIN teams t ON p.team_id = t.id
+        WHERE p.id = ? AND t.owner_user_id = ?
+      );
+      `,
+      [id, ownerId]
+    );
+
+    // 2) Cancellare il giocatore in sicurezza
+    await db.runAsync(
+      `
+      DELETE FROM players
+      WHERE id = ?
+        AND team_id IN (SELECT id FROM teams WHERE owner_user_id = ?);
+      `,
+      [id, ownerId]
+    );
+
+    return true;
+  } catch (error) {
+    console.error('Error deleting player:', error);
+    return false;
+  }
+},
+
+
+    // lato player: solo lettura giocatori del team (no filtro owner)
+  getByTeamPublic: async (teamId: number): Promise<Player[]> => {
+    const db = await getDb();
+    return await db.getAllAsync<Player>(
+      `
+      SELECT p.*,
+             t.name  AS team_name,
+             t.color AS team_color,
+             COUNT(CASE WHEN f.is_paid = 0 THEN 1 END)                   AS active_fines,
+             COALESCE(SUM(CASE WHEN f.is_paid = 0 THEN f.amount END), 0) AS total_unpaid,
+             (SELECT COUNT(*) FROM users WHERE player_id = p.id) AS is_taken
+      FROM players p
+      JOIN teams t ON p.team_id = t.id
+      LEFT JOIN fines f ON p.id = f.player_id
+      WHERE p.team_id = ?
+      GROUP BY p.id
+      ORDER BY p.name ASC;
+      `,
+      [teamId]
+    );
+  },
+
+  // Ottieni singolo giocatore per id (usato per redirect dopo login)
+  getById: async (playerId: number): Promise<Player | null> => {
+    const db = await getDb();
+    return await db.getFirstAsync<Player>(
+      `
+      SELECT p.*,
+             t.name  AS team_name,
+             t.color AS team_color
+      FROM players p
+      JOIN teams t ON p.team_id = t.id
+      WHERE p.id = ?
+      `,
+      [playerId]
+    );
+  },
+
+  update: async (ownerId: number, playerId: number, playerData: Partial<{ name: string; surname: string; position: string }>): Promise<boolean> => {
+    const db = await getDb();
+    try {
+      // Verifica che il giocatore appartenga a una squadra del mister
+      const player = await db.getFirstAsync<{ id: number }>((
+        `SELECT p.id FROM players p JOIN teams t ON p.team_id = t.id WHERE p.id = ? AND t.owner_user_id = ?`
+      ), [playerId, ownerId]);
+      if (!player) return false;
+
+      // Build dynamic UPDATE query
+      const updates: string[] = [];
+      const values: any[] = [];
+
+      if (playerData.name !== undefined) {
+        updates.push('name = ?');
+        values.push(playerData.name);
+      }
+      if (playerData.surname !== undefined) {
+        updates.push('surname = ?');
+        values.push(playerData.surname);
+      }
+      if (playerData.position !== undefined) {
+        updates.push('position = ?');
+        values.push(playerData.position);
+      }
+
+      if (updates.length === 0) return false;
+
+      values.push(playerId);
+
+      const query = `UPDATE players SET ${updates.join(', ')} WHERE id = ?`;
+      await db.runAsync(query, values);
+      return true;
+    } catch (error) {
+      console.error('Error updating player:', error);
+      return false;
+    }
+  },
+
+};
+
+/* =========================
+ *        FINES DB
+ * ========================= */
+export const finesDB = {
+  getAll: async (ownerId: number): Promise<Fine[]> => {
+    const db = await getDb();
+    try {
+      return await db.getAllAsync(
+        `
+        SELECT f.*,
+               CASE
+                 WHEN COALESCE(TRIM(p.surname), '') <> '' THEN TRIM(p.surname) || ' ' || TRIM(p.name)
+                 ELSE TRIM(p.name)
+               END      AS player_name,
+               p.number AS player_number,
+               t.name   AS team_name,
+               t.color  AS team_color
+        FROM fines f
+        JOIN players p ON f.player_id = p.id
+        JOIN teams   t ON p.team_id = t.id
+        WHERE t.owner_user_id = ?
+        ORDER BY f.created_at DESC;
+      `,
+        [ownerId]
+      );
+    } catch (error) {
+      console.error('Error getting fines:', error);
+      return [];
+    }
+  },
+
+  getByPlayer: async (playerId: number): Promise<Fine[]> => {
+    const db = await getDb();
+    try {
+      return await db.getAllAsync(
+        `
+        SELECT f.*,
+               CASE
+                 WHEN COALESCE(TRIM(p.surname), '') <> '' THEN TRIM(p.surname) || ' ' || TRIM(p.name)
+                 ELSE TRIM(p.name)
+               END      AS player_name,
+               p.number AS player_number
+        FROM fines f
+        JOIN players p ON f.player_id = p.id
+        WHERE f.player_id = ?
+        ORDER BY f.created_at DESC;
+      `,
+        [playerId]
+      );
+    } catch (error) {
+      console.error('Error getting fines by player:', error);
+      return [];
+    }
+  },
+
+  create: async (
+    ownerId: number,
+    fine: { player_id: number; type: string; amount: number; description?: string; due_date: string }
+  ) => {
+    const db = await getDb();
+    try {
+      const ok = await db.getFirstAsync<{ id: number }>(
+        `
+        SELECT p.id
+        FROM players p
+        JOIN teams t ON p.team_id = t.id
+        WHERE p.id = ? AND t.owner_user_id = ?
+      `,
+        [fine.player_id, ownerId]
+      );
+      if (!ok) return null;
+
+      const res = await db.runAsync(
+        `INSERT INTO fines (player_id, type, amount, description, due_date)
+         VALUES (?, ?, ?, ?, ?)`,
+        [fine.player_id, fine.type, fine.amount, fine.description || '', fine.due_date]
+      );
+      return res.lastInsertRowId ?? null;
+    } catch (error) {
+      console.error('Error creating fine:', error);
+      return null;
+    }
+  },
+
+  updatePaymentStatus: async (ownerId: number, id: number, isPaid: boolean) => {
+    const db = await getDb();
+    try {
+      const paidAt = isPaid ? new Date().toISOString() : null;
+      await db.runAsync(
+        `
+        UPDATE fines
+        SET is_paid = ?, paid_at = ?
+        WHERE id = ?
+          AND player_id IN (
+            SELECT p.id
+            FROM players p
+            JOIN teams t ON p.team_id = t.id
+            WHERE t.owner_user_id = ?
+          );
+      `,
+        [isPaid ? 1 : 0, paidAt, id, ownerId]
+      );
+      return true;
+    } catch (error) {
+      console.error('Error updating fine payment status:', error);
+      return false;
+    }
+  },
+
+  delete: async (ownerId: number, id: number) => {
+    const db = await getDb();
+    try {
+      await db.runAsync(
+        `
+        DELETE FROM fines
+        WHERE id = ?
+          AND player_id IN (
+            SELECT p.id
+            FROM players p
+            JOIN teams t ON p.team_id = t.id
+            WHERE t.owner_user_id = ?
+          );
+      `,
+        [id, ownerId]
+      );
+      return true;
+    } catch (error) {
+      console.error('Error deleting fine:', error);
+      return false;
+    }
+  },
+
+  getByTeamPublic: async (teamId: number): Promise<Fine[]> => {
+    const db = await getDb();
+    return await db.getAllAsync<Fine>(
+      `
+      SELECT f.*,
+             CASE
+               WHEN COALESCE(TRIM(p.surname), '') <> '' THEN TRIM(p.surname) || ' ' || TRIM(p.name)
+               ELSE TRIM(p.name)
+             END      AS player_name,
+             p.number AS player_number
+      FROM fines f
+      JOIN players p ON f.player_id = p.id
+      WHERE p.team_id = ?
+      ORDER BY f.created_at DESC;
+      `,
+      [teamId]
+    );
+  },
+
+  // salva notificationId nella multa
+  setNotificationId: async (ownerId: number, fineId: number, notificationId: string | null) => {
+    const db = await getDb();
+    try {
+      await db.runAsync(
+        `
+        UPDATE fines
+        SET notification_id = ?
+        WHERE id = ?
+          AND player_id IN (
+            SELECT p.id
+            FROM players p
+            JOIN teams t ON p.team_id = t.id
+            WHERE t.owner_user_id = ?
+          );
+        `,
+        [notificationId, fineId, ownerId]
+      );
+      return true;
+    } catch (e) {
+      console.error('Error setting fine notification_id:', e);
+      return false;
+    }
+  },
+
+  // recupera notificationId 
+  getNotificationId: async (ownerId: number, fineId: number): Promise<string | null> => {
+    const db = await getDb();
+    const row = await db.getFirstAsync<{ notification_id: string | null }>(
+      `
+      SELECT f.notification_id AS notification_id
+      FROM fines f
+      JOIN players p ON f.player_id = p.id
+      JOIN teams t ON p.team_id = t.id
+      WHERE f.id = ? AND t.owner_user_id = ?
+      LIMIT 1;
+      `,
+      [fineId, ownerId]
+    );
+    return row?.notification_id ?? null;
+  },
+};
+
+/* =========================
+ *      TRAINING DB
+ * ========================= */
+export const trainingDB = {
+  getTeamAttendanceByDate: async (
+    ownerId: number,
+    teamId: number,
+    sessionDate: string
+  ): Promise<TeamAttendanceRow[]> => {
+    const db = await getDb();
+
+    try {
+      return await db.getAllAsync<TeamAttendanceRow>(
+        `
+        SELECT
+          p.id       AS player_id,
+          p.name     AS player_first_name,
+          p.surname  AS player_surname,
+          CASE
+            WHEN COALESCE(TRIM(p.surname), '') <> '' THEN TRIM(p.surname) || ' ' || TRIM(p.name)
+            ELSE TRIM(p.name)
+          END        AS player_name,
+          p.number   AS player_number,
+          p.position AS player_position,
+          ar.status  AS attendance_status
+        FROM players p
+        JOIN teams t ON p.team_id = t.id
+        LEFT JOIN training_sessions ts
+          ON ts.team_id = p.team_id
+         AND ts.session_date = ?
+        LEFT JOIN attendance_records ar
+          ON ar.session_id = ts.id
+         AND ar.player_id = p.id
+        WHERE p.team_id = ?
+          AND t.owner_user_id = ?
+        ORDER BY
+          CASE
+            WHEN COALESCE(TRIM(p.surname), '') <> '' THEN LOWER(TRIM(p.surname))
+            WHEN INSTR(TRIM(p.name), ' ') > 0 THEN LOWER(TRIM(SUBSTR(TRIM(p.name), INSTR(TRIM(p.name), ' ') + 1)))
+            ELSE LOWER(TRIM(p.name))
+          END ASC,
+          LOWER(TRIM(p.name)) ASC;
+        `,
+        [sessionDate, teamId, ownerId]
+      );
+    } catch (error) {
+      console.error('Error getting team attendance by date:', error);
+      return [];
+    }
+  },
+
+  getTeamAttendanceByDatePublic: async (
+    teamId: number,
+    sessionDate: string
+  ): Promise<TeamAttendanceRow[]> => {
+    const db = await getDb();
+
+    try {
+      return await db.getAllAsync<TeamAttendanceRow>(
+        `
+        SELECT
+          p.id       AS player_id,
+          p.name     AS player_first_name,
+          p.surname  AS player_surname,
+          CASE
+            WHEN COALESCE(TRIM(p.surname), '') <> '' THEN TRIM(p.surname) || ' ' || TRIM(p.name)
+            ELSE TRIM(p.name)
+          END        AS player_name,
+          p.number   AS player_number,
+          p.position AS player_position,
+          ar.status  AS attendance_status
+        FROM players p
+        LEFT JOIN training_sessions ts
+          ON ts.team_id = p.team_id
+         AND ts.session_date = ?
+        LEFT JOIN attendance_records ar
+          ON ar.session_id = ts.id
+         AND ar.player_id = p.id
+        WHERE p.team_id = ?
+        ORDER BY
+          CASE
+            WHEN COALESCE(TRIM(p.surname), '') <> '' THEN LOWER(TRIM(p.surname))
+            WHEN INSTR(TRIM(p.name), ' ') > 0 THEN LOWER(TRIM(SUBSTR(TRIM(p.name), INSTR(TRIM(p.name), ' ') + 1)))
+            ELSE LOWER(TRIM(p.name))
+          END ASC,
+          LOWER(TRIM(p.name)) ASC;
+        `,
+        [sessionDate, teamId]
+      );
+    } catch (error) {
+      console.error('Error getting public team attendance by date:', error);
+      return [];
+    }
+  },
+
+  setPlayerAttendance: async (
+    ownerId: number,
+    payload: {
+      team_id: number;
+      session_date: string;
+      player_id: number;
+      status: AttendanceStatus;
+    }
+  ): Promise<boolean> => {
+    const db = await getDb();
+
+    try {
+      // team ownership check
+      const team = await db.getFirstAsync<{ id: number }>(
+        `SELECT id FROM teams WHERE id = ? AND owner_user_id = ?`,
+        [payload.team_id, ownerId]
+      );
+      if (!team) return false;
+
+      // player belongs to the same team
+      const player = await db.getFirstAsync<{ id: number }>(
+        `SELECT id FROM players WHERE id = ? AND team_id = ?`,
+        [payload.player_id, payload.team_id]
+      );
+      if (!player) return false;
+
+      // ensure session exists for (team, date)
+      await db.runAsync(
+        `
+        INSERT OR IGNORE INTO training_sessions (team_id, session_date, created_by)
+        VALUES (?, ?, ?);
+        `,
+        [payload.team_id, payload.session_date, ownerId]
+      );
+
+      const session = await db.getFirstAsync<{ id: number }>(
+        `
+        SELECT id
+        FROM training_sessions
+        WHERE team_id = ? AND session_date = ?
+        LIMIT 1;
+        `,
+        [payload.team_id, payload.session_date]
+      );
+      if (!session?.id) return false;
+
+      // Check if record already exists
+      const existing = await db.getFirstAsync<{ status: string }>(
+        `SELECT status FROM attendance_records WHERE session_id = ? AND player_id = ?`,
+        [session.id, payload.player_id]
+      );
+
+      // If same status is clicked, delete (toggle off)
+      if (existing && existing.status === payload.status) {
+        await db.runAsync(
+          `DELETE FROM attendance_records WHERE session_id = ? AND player_id = ?`,
+          [session.id, payload.player_id]
+        );
+      } else {
+        // Insert or update attendance
+        await db.runAsync(
+          `
+          INSERT INTO attendance_records (session_id, player_id, status, updated_at)
+          VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(session_id, player_id)
+          DO UPDATE SET
+            status = excluded.status,
+            updated_at = CURRENT_TIMESTAMP;
+          `,
+          [session.id, payload.player_id, payload.status]
+        );
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error setting player attendance:', error);
+      return false;
+    }
+  },
+
+  getPlayerAttendanceSummary: async (
+    teamId: number,
+    playerId: number
+  ): Promise<PlayerAttendanceSummary> => {
+    const db = await getDb();
+
+    try {
+      const result = await db.getFirstAsync<{
+        present: number;
+        late: number;
+        injured: number;
+        absent_justified: number;
+        absent_unjustified: number;
+        sick: number;
+        total_sessions: number;
+      }>(
+        `
+        SELECT
+          COUNT(CASE WHEN ar.status = 'present' THEN 1 END) AS present,
+          COUNT(CASE WHEN ar.status = 'late' THEN 1 END) AS late,
+          COUNT(CASE WHEN ar.status = 'injured' THEN 1 END) AS injured,
+          COUNT(CASE WHEN ar.status = 'absent_justified' THEN 1 END) AS absent_justified,
+          COUNT(CASE WHEN ar.status = 'absent_unjustified' THEN 1 END) AS absent_unjustified,
+          COUNT(CASE WHEN ar.status = 'sick' THEN 1 END) AS sick,
+          COUNT(DISTINCT ts.id) AS total_sessions
+        FROM players p
+        LEFT JOIN training_sessions ts ON ts.team_id = p.team_id
+        LEFT JOIN attendance_records ar ON ar.session_id = ts.id AND ar.player_id = p.id
+        WHERE p.id = ? AND p.team_id = ?
+        `,
+        [playerId, teamId]
+      );
+
+      return (
+        result ?? {
+          present: 0,
+          late: 0,
+          injured: 0,
+          absent_justified: 0,
+          absent_unjustified: 0,
+          sick: 0,
+          total_sessions: 0,
+        }
+      );
+    } catch (error) {
+      console.error('Error getting player attendance summary:', error);
+      return {
+        present: 0,
+        late: 0,
+        injured: 0,
+        absent_justified: 0,
+        absent_unjustified: 0,
+        sick: 0,
+        total_sessions: 0,
+      };
+    }
+  },
+
+  getPlayerAttendanceHistory: async (
+    teamId: number,
+    playerId: number
+  ): Promise<PlayerAttendanceHistory[]> => {
+    const db = await getDb();
+
+    try {
+      return await db.getAllAsync<PlayerAttendanceHistory>(
+        `
+        SELECT
+          ts.session_date AS date,
+          ar.status AS status
+        FROM training_sessions ts
+        LEFT JOIN attendance_records ar
+          ON ar.session_id = ts.id
+         AND ar.player_id = ?
+        WHERE ts.team_id = ?
+        ORDER BY ts.session_date ASC;
+        `,
+        [playerId, teamId]
+      );
+    } catch (error) {
+      console.error('Error getting player attendance history:', error);
+      return [];
+    }
+  },
+
+  getMonthAttendance: async (
+    teamId: number,
+    year: number,
+    month: number // 1-12
+  ): Promise<{
+    players: Array<{ id: number; name: string; surname?: string; number: string; position: string }>;
+    attendances: Array<{ player_id: number; date: string; status: AttendanceStatus }>;
+  }> => {
+    const db = await getDb();
+
+    try {
+      // Get all players from the team
+      const players = await db.getAllAsync<{
+        id: number;
+        name: string;
+        surname?: string;
+        number: string;
+        position: string;
+      }>(
+        `
+        SELECT id, name, surname, number, position
+        FROM players
+        WHERE team_id = ?
+        ORDER BY
+          CASE
+            WHEN COALESCE(TRIM(surname), '') <> '' THEN LOWER(TRIM(surname))
+            WHEN INSTR(TRIM(name), ' ') > 0 THEN LOWER(TRIM(SUBSTR(TRIM(name), INSTR(TRIM(name), ' ') + 1)))
+            ELSE LOWER(TRIM(name))
+          END ASC,
+          LOWER(TRIM(name)) ASC;
+        `,
+        [teamId]
+      );
+
+      // Build date range for the month
+      const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+      const nextMonth = month === 12 ? 1 : month + 1;
+      const nextYear = month === 12 ? year + 1 : year;
+      const endDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`;
+
+      // Get all attendance records for this team in the given month
+      const attendances = await db.getAllAsync<{
+        player_id: number;
+        date: string;
+        status: AttendanceStatus;
+      }>(
+        `
+        SELECT ar.player_id, ts.session_date AS date, ar.status
+        FROM training_sessions ts
+        JOIN attendance_records ar ON ar.session_id = ts.id
+        WHERE ts.team_id = ?
+          AND ts.session_date >= ?
+          AND ts.session_date < ?
+        ORDER BY ts.session_date ASC, ar.player_id ASC;
+        `,
+        [teamId, startDate, endDate]
+      );
+
+      return { players, attendances };
+    } catch (error) {
+      console.error('Error getting month attendance:', error);
+      return { players: [], attendances: [] };
+    }
+  },
+};
+
+// =========================
+//   EXPORT CSV PER MISTER
+// =========================
+export const buildCsvForMister = async (
+  ownerId: number,
+  teamId?: number  
+): Promise<string> => {
+  const db = await getDb();
+
+  // Costruiamo la WHERE dinamica
+  const params: any[] = [ownerId];
+  let extraTeamFilter = '';
+
+  if (typeof teamId === 'number' && teamId > 0) {
+    extraTeamFilter = ' AND t.id = ?';
+    params.push(teamId);
+  }
+
+  // Prendiamo tutte le multe del mister (eventualmente filtrate per team)
+  const rows = await db.getAllAsync<{
+    id: number;
+    player_id: number;
+    type: string;
+    amount: number;
+    description?: string | null;
+    due_date: string;
+    is_paid: 0 | 1;
+    paid_at?: string | null;
+    created_at: string;
+    player_name?: string | null;
+    player_number?: string | null;
+    team_name?: string | null;
+  }>(
+    `
+    SELECT f.*,
+           p.name   AS player_name,
+           p.number AS player_number,
+           t.name   AS team_name
+    FROM fines f
+    JOIN players p ON f.player_id = p.id
+    JOIN teams   t ON p.team_id = t.id
+    WHERE t.owner_user_id = ?${extraTeamFilter}
+    ORDER BY f.created_at DESC;
+    `,
+    params
+  );
+
+  // Funzione per "sanitizzare" i campi nel CSV
+  const esc = (v: unknown) => {
+    if (v === null || v === undefined) return '""';
+    const s = String(v).replace(/"/g, '""');
+    return `"${s}"`;
+  };
+
+  // Formattazione date in stile italiano
+  const formatDate = (isoLike: string | null | undefined) => {
+    if (!isoLike) return '';
+    const d = new Date(isoLike);
+    if (isNaN(d.getTime())) return '';
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  };
+
+  const formatDateTime = (isoLike: string | null | undefined) => {
+    if (!isoLike) return '';
+    const d = new Date(isoLike);
+    if (isNaN(d.getTime())) return '';
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mi = String(d.getMinutes()).padStart(2, '0');
+    return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
+  };
+
+  // Intestazione colonne in italiano
+  const header = [
+    'Squadra',
+    'Giocatore',
+    'Numero',
+    'Tipo multa',
+    'Importo (€)',
+    'Data scadenza',
+    'Pagata',
+    'Data pagamento',
+    'Creata il',
+  ].join(',');
+
+  const lines = rows.map((r) =>
+    [
+      esc(r.team_name ?? ''),
+      esc(r.player_name ?? ''),
+      esc(r.player_number ?? ''),
+      esc(r.type),
+      // importo in formato europeo (, come separatore decimale)
+      esc(
+        typeof r.amount === 'number'
+          ? r.amount.toFixed(2).replace('.', ',')
+          : String(r.amount)
+      ),
+      esc(formatDate(r.due_date)),
+      esc(r.is_paid ? 'Sì' : 'No'),
+      esc(r.paid_at ? formatDateTime(r.paid_at) : ''),
+      esc(formatDateTime(r.created_at)),
+    ].join(',')
+  );
+
+
+  
+  return [header, ...lines].join('\n');
+};
+
+// =========================
+//  EXPORT WRAPPER PER CSV
+// =========================
+export const exportAllDataForMisterToCsv = async (ownerId: number): Promise<string> => {
+  try {
+    const csv = await buildCsvForMister(ownerId);
+    return csv;
+  } catch (err) {
+    console.error("Errore durante la creazione del CSV:", err);
+    throw err;
+  }
+};
+
+/* =========================
+ *    WIPE DATI DEL MISTER
+ * ========================= */
+
+/**
+ * Cancella TUTTE le squadre, i giocatori e le multe
+ * appartenenti a un certo mister (owner_user_id).
+ */
+export const clearAllDataForMister = async (ownerUserId: number): Promise<void> => {
+  const db = await getDb();
+
+  try {
+    await db.execAsync('BEGIN;');
+
+    // 0) Prima recupera tutti gli ID delle multe per cancellare le notifiche
+    const fineIds = await db.getAllAsync<{ id: number }>(
+      `
+      SELECT f.id
+      FROM fines f
+      JOIN players p ON f.player_id = p.id
+      JOIN teams t ON p.team_id = t.id
+      WHERE t.owner_user_id = ?
+      `,
+      [ownerUserId]
+    );
+
+    // Cancella le notifiche per ogni multa
+    for (const { id } of fineIds) {
+      await cancelFineDueNotificationByFineId(id);
+    }
+
+    // 1) cancella tutte le multe dei giocatori dei team del mister
+    await db.runAsync(
+      `
+      DELETE FROM fines
+      WHERE player_id IN (
+        SELECT p.id
+        FROM players p
+        JOIN teams t ON p.team_id = t.id
+        WHERE t.owner_user_id = ?
+      );
+      `,
+      [ownerUserId]
+    );
+
+    // 2) cancella tutti i giocatori dei team del mister
+    await db.runAsync(
+      `
+      DELETE FROM players
+      WHERE team_id IN (
+        SELECT id
+        FROM teams
+        WHERE owner_user_id = ?
+      );
+      `,
+      [ownerUserId]
+    );
+
+    // 3) cancella tutte le squadre del mister
+    await db.runAsync(
+      `
+      DELETE FROM teams
+      WHERE owner_user_id = ?;
+      `,
+      [ownerUserId]
+    );
+
+    await db.execAsync('COMMIT;');
+  } catch (err) {
+    console.error('Errore in clearAllDataForMister:', err);
+    // se qualcosa va storto, roll back
+    try {
+      await db.execAsync('ROLLBACK;');
+    } catch {}
+    throw err;
+  }
+};
+
+// Elimina TUTTI i dati + l'account del mister
+export const deleteMisterAccount = async (ownerId: number): Promise<void> => {
+  const db = await getDb();
+
+  // 1) Prima ripuliamo tutte le squadre/giocatori/multe del mister
+  await clearAllDataForMister(ownerId);
+
+  // 2) Poi eliminiamo l'utente con ruolo "mister"
+  await db.runAsync(
+    `
+    DELETE FROM users
+    WHERE id = ?
+      AND role = 'mister';
+    `,
+    [ownerId]
+  );
+};
+
+/* =========================
+ *          STATS
+ * ========================= */
+// Firma compatibile: se passi ownerId filtra, altrimenti globale (fallback)
+export const statsDB = {
+  getDashboardStats: async (ownerId?: number): Promise<{
+    total_teams: number;
+    total_players: number;
+    active_fines: number;
+    total_amount: number;
+    paid_amount: number;
+  }> => {
+    const db = await getDb();
+    try {
+      if (ownerId && ownerId > 0) {
+        // stats solo del mister
+        const rows = await db.getFirstAsync<{
+          total_teams: number;
+          total_players: number;
+          active_fines: number;
+          total_amount: number;
+          paid_amount: number;
+        }>(
+          `
+          SELECT
+            (SELECT COUNT(*) FROM teams WHERE owner_user_id = ?) AS total_teams,
+            (SELECT COUNT(*) FROM players WHERE team_id IN (SELECT id FROM teams WHERE owner_user_id = ?)) AS total_players,
+            (SELECT COUNT(*) FROM fines WHERE is_paid = 0 AND player_id IN (
+              SELECT p.id FROM players p JOIN teams t ON p.team_id = t.id WHERE t.owner_user_id = ?
+            )) AS active_fines,
+            (SELECT COALESCE(SUM(amount), 0) FROM fines WHERE player_id IN (
+              SELECT p.id FROM players p JOIN teams t ON p.team_id = t.id WHERE t.owner_user_id = ?
+            )) AS total_amount,
+            (SELECT COALESCE(SUM(amount), 0) FROM fines WHERE is_paid = 1 AND player_id IN (
+              SELECT p.id FROM players p JOIN teams t ON p.team_id = t.id WHERE t.owner_user_id = ?
+            )) AS paid_amount
+        `,
+          [ownerId, ownerId, ownerId, ownerId, ownerId]
+        );
+        return (
+          rows ?? {
+            total_teams: 0,
+            total_players: 0,
+            active_fines: 0,
+            total_amount: 0,
+            paid_amount: 0,
+          }
+        );
+      }
+
+      // fallback globale
+      const stats = await db.getFirstAsync<{
+        total_teams: number;
+        total_players: number;
+        active_fines: number;
+        total_amount: number;
+        paid_amount: number;
+      }>(`
+        SELECT 
+          (SELECT COUNT(*) FROM teams)                           AS total_teams,
+          (SELECT COUNT(*) FROM players)                         AS total_players,
+          (SELECT COUNT(*) FROM fines WHERE is_paid = 0)         AS active_fines,
+          (SELECT COALESCE(SUM(amount), 0) FROM fines)           AS total_amount,
+          (SELECT COALESCE(SUM(amount), 0) FROM fines WHERE is_paid = 1) AS paid_amount
+      `);
+
+      return (
+        stats ?? {
+          total_teams: 0,
+          total_players: 0,
+          active_fines: 0,
+          total_amount: 0,
+          paid_amount: 0,
+        }
+      );
+    } catch (error) {
+      console.error('Error getting dashboard stats:', error);
+      return {
+        total_teams: 0,
+        total_players: 0,
+        active_fines: 0,
+        total_amount: 0,
+        paid_amount: 0,
+      };
+    }
+  },
+};
+
+/* =========================
+ *       EXPORT UTILI
+ * ========================= */
+export const getDatabaseInstance = async () => getDb();
+export default getDb;

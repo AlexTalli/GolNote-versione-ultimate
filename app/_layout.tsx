@@ -6,6 +6,7 @@ import { useDatabase } from '@/hooks/useDatabase';
 import { RoleProvider } from '@/contexts/RoleContext';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { View, ActivityIndicator } from 'react-native';
+import { useEffect } from 'react';
 
 // Configurazione notifiche: mostra alert/banner/lista, no suono/badge
 Notifications.setNotificationHandler({
@@ -21,6 +22,22 @@ Notifications.setNotificationHandler({
 // Layout radice dell'app - gestisce bootstrap e providers globali
 export default function RootLayout() {
   const { isInitialized } = useDatabase(); // Stato inizializzazione DB
+
+  // Listener per debug notifiche
+  useEffect(() => {
+    const subscription = Notifications.addNotificationReceivedListener(notification => {
+      console.log('[NOTIF] 📨 Notification received!', notification.request.content);
+    });
+
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+      console.log('[NOTIF] 👆 Notification tapped!', response.notification.request.content);
+    });
+
+    return () => {
+      subscription.remove();
+      responseSubscription.remove();
+    };
+  }, []);
 
   // Mostra loading fino a DB pronto
   if (!isInitialized) {

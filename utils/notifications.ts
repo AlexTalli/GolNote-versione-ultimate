@@ -88,7 +88,8 @@ export async function rescheduleWeeklyFinesReminder(): Promise<boolean> {
 /* ========== NOTIFICA MULTA IN SCADENZA ========== */
 
 /**
- * Pianifica una notifica per il giorno prima della scadenza (ore 09:00).
+ * Pianifica notifica il giorno prima della scadenza (ore 09:00).
+ * Usata sia dal mister che dal player per essere avvisati del promemoria.
  * Se passi fineId, salva anche il mapping (fineId -> notificationId) per poter cancellare in delete.
  */
 export async function scheduleFineDueNotification(
@@ -117,18 +118,22 @@ export async function scheduleFineDueNotification(
 
   const now = new Date();
   if (triggerDate.getTime() <= now.getTime()) {
-    console.log('[NOTIF] Trigger date is in the past — skipping');
+    console.log('[NOTIF] Trigger date is in the past - skipping reminder notification');
+    console.log('[NOTIF] Due date:', dueDate, '| Trigger would be:', triggerDate.toLocaleString('it-IT'));
     return false;
   }
 
-  let body = 'Hai una multa che scade domani, non te lo dimenticare.';
-  if (playerName && teamName) body = `${playerName} (${teamName}) ha una multa che scade domani.`;
-  else if (playerName) body = `${playerName} ha una multa che scade domani.`;
+  let reminderBody = 'Hai una multa che scade domani, non te lo dimenticare.';
+  if (playerName && teamName) {
+    reminderBody = `${playerName} (${teamName}) ha una multa che scade domani.`;
+  } else if (playerName) {
+    reminderBody = `${playerName} ha una multa che scade domani.`;
+  }
 
   const notificationId = await Notifications.scheduleNotificationAsync({
     content: {
       title: '⏰ Multa in scadenza',
-      body,
+      body: reminderBody,
       data: { type: 'fine_due_reminder', playerName, teamName, dueDate, fineId },
     },
     trigger: {
@@ -142,7 +147,8 @@ export async function scheduleFineDueNotification(
     await AsyncStorage.setItem(fineDueKey(fineId), notificationId);
   }
 
-  console.log('[NOTIF] Fine due notification scheduled with id:', notificationId);
+  console.log('[NOTIF] Fine due reminder notification scheduled with id:', notificationId);
+  console.log('[NOTIF] Reminder will trigger on:', triggerDate.toLocaleString('it-IT'));
   return notificationId;
 }
 
@@ -150,21 +156,25 @@ export async function scheduleFineDueNotification(
 
 export async function scheduleFineAssignedNotification(): Promise<boolean> {
   const granted = await ensureNotificationPermission();
-  if (!granted) return false;
+  if (!granted) {
+    console.log('[NOTIF] Permission not granted for fine assigned notification');
+    return false;
+  }
 
-  await Notifications.scheduleNotificationAsync({
+  const notifId = await Notifications.scheduleNotificationAsync({
     content: {
-      title: 'Nuova multa',
+      title: '🔔 Nuova multa',
       body: 'Ti è appena stata assegnata una multa, apri l\'app per vederne i dettagli.',
       data: { type: 'fine_assigned_player' },
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-      seconds: 1,
+      seconds: 2,
       repeats: false,
     },
   });
 
+  console.log('[NOTIF] Player new fine notification scheduled with id:', notifId);
   return true;
 }
 

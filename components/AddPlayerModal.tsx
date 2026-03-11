@@ -17,21 +17,32 @@ type TeamLite = { id: number; name: string; color?: string };
 type Props = {
   visible: boolean;
   onClose: () => void;
-  onSave: (playerData: { name: string; number: string; position: string; team_id: number }) => void;
+  onSave: (playerData: { name?: string; surname?: string; position?: string; team_id?: number }) => void | Promise<void>;
   /** Se passi presetTeamId, la squadra è bloccata e non mostri la selezione */
   presetTeamId?: number;
   /** Se NON passi presetTeamId puoi passare una lista di squadre selezionabili */
   teams?: TeamLite[];
+  /** Dati del giocatore per edit mode */
+  editPlayer?: { id: number; name: string; surname: string; position: string };
 };
 
 const positions = ['Portiere', 'Difensore', 'Centrocampista', 'Attaccante'];
 
-export function AddPlayerModal({ visible, onClose, onSave, presetTeamId, teams = [] }: Props) {
+export function AddPlayerModal({ visible, onClose, onSave, presetTeamId, teams = [], editPlayer }: Props) {
   const [name, setName] = useState('');
-  const [number, setNumber] = useState('');
+  const [surname, setSurname] = useState('');
   const [selectedPosition, setSelectedPosition] = useState(positions[0]);
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  // Pre-fill form when editing
+  useMemo(() => {
+    if (visible && editPlayer) {
+      setName(editPlayer.name);
+      setSurname(editPlayer.surname);
+      setSelectedPosition(editPlayer.position);
+    }
+  }, [visible, editPlayer]);
 
   const isPreset = typeof presetTeamId === 'number' && presetTeamId > 0;
 
@@ -47,13 +58,13 @@ export function AddPlayerModal({ visible, onClose, onSave, presetTeamId, teams =
   }, [isPreset, presetTeamId, teams]);
 
   const canSave = useMemo(
-    () => Boolean(name.trim() && number.trim() && selectedTeamId),
-    [name, number, selectedTeamId]
+    () => Boolean(name.trim() && surname.trim() && selectedTeamId),
+    [name, surname, selectedTeamId]
   );
 
   const reset = () => {
     setName('');
-    setNumber('');
+    setSurname('');
     setSelectedPosition(positions[0]);
     setErr(null);
     if (isPreset) {
@@ -63,18 +74,33 @@ export function AddPlayerModal({ visible, onClose, onSave, presetTeamId, teams =
     }
   };
 
-  const handleSave = () => {
-    if (!canSave || !selectedTeamId) {
-      setErr('Compila tutti i campi e seleziona una squadra');
-      return;
+  const handleSave = async () => {
+    if (editPlayer) {
+      // Edit mode: only name, surname, position required
+      if (!name.trim() || !surname.trim()) {
+        setErr('Compila nome e cognome');
+        return;
+      }
+      await onSave({
+        name: name.trim(),
+        surname: surname.trim(),
+        position: selectedPosition,
+      });
+      reset();
+    } else {
+      // Add mode: need team selection
+      if (!canSave || !selectedTeamId) {
+        setErr('Compila tutti i campi e seleziona una squadra');
+        return;
+      }
+      await onSave({
+        name: name.trim(),
+        surname: surname.trim(),
+        position: selectedPosition,
+        team_id: selectedTeamId,
+      });
+      reset();
     }
-    onSave({
-      name: name.trim(),
-      number: number.trim(),
-      position: selectedPosition,
-      team_id: selectedTeamId,
-    });
-    reset();
   };
 
   const handleClose = () => {
@@ -93,7 +119,7 @@ export function AddPlayerModal({ visible, onClose, onSave, presetTeamId, teams =
       >
         <View style={styles.modal}>
           <View style={styles.header}>
-            <Text style={styles.title}>Aggiungi Giocatore</Text>
+            <Text style={styles.title}>{editPlayer ? 'Modifica Giocatore' : 'Aggiungi Giocatore'}</Text>
             <TouchableOpacity onPress={handleClose}>
               <X size={24} color="#6b7280" />
             </TouchableOpacity>
@@ -101,25 +127,24 @@ export function AddPlayerModal({ visible, onClose, onSave, presetTeamId, teams =
 
           <View style={styles.form}>
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Nome e Cognome</Text>
+              <Text style={styles.label}>Nome</Text>
               <TextInput
                 style={styles.input}
                 value={name}
                 onChangeText={setName}
-                placeholder="Inserisci nome completo"
+                placeholder="Inserisci nome"
                 autoCapitalize="words"
               />
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Numero Maglia</Text>
+              <Text style={styles.label}>Cognome</Text>
               <TextInput
                 style={styles.input}
-                value={number}
-                onChangeText={setNumber}
-                placeholder="Inserisci numero"
-                keyboardType="numeric"
-                maxLength={3}
+                value={surname}
+                onChangeText={setSurname}
+                placeholder="Inserisci cognome"
+                autoCapitalize="words"
               />
             </View>
 
@@ -148,7 +173,8 @@ export function AddPlayerModal({ visible, onClose, onSave, presetTeamId, teams =
               </View>
             </View>
 
-            {/* Squadra */}
+            {/* Squadra (only show in add mode) */}
+            {!editPlayer && (
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Squadra</Text>
 
@@ -191,6 +217,7 @@ export function AddPlayerModal({ visible, onClose, onSave, presetTeamId, teams =
                 </View>
               )}
             </View>
+            )}
 
             {err ? <Text style={styles.err}>{err}</Text> : null}
           </View>

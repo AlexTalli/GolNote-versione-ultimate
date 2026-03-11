@@ -2,7 +2,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRole } from '@/contexts/RoleContext';
 import { useEffect, useRef, useState } from 'react';
-import { finesDB, playersDB } from '@/database/database';
+import { finesDB, playersDB } from '@/database/database.supabase';
 import {
   scheduleFineAssignedNotification,
   scheduleFineDueNotification,
@@ -25,7 +25,7 @@ export default function PlayerLayout() {
       setPlayerIdentity({ playerId: user.playerId });
       
       // Solo se siamo nella schermata join-team, carica il giocatore e naviga alla squadra
-      const inJoinTeam = segments.includes('join-team');
+      const inJoinTeam = (segments as unknown as string[]).includes('join-team');
       if (inJoinTeam) {
         // Carica il giocatore per ottenere il team_id
         playersDB.getById(user.playerId).then((player) => {
@@ -69,6 +69,7 @@ export default function PlayerLayout() {
         if (!hasBaselineFinesRef.current) hasBaselineFinesRef.current = true;
 
         if (hasNewFine) {
+          console.log('[NOTIF-PLAYER] New fine detected! Sending notification...');
           await scheduleFineAssignedNotification();
         }
 

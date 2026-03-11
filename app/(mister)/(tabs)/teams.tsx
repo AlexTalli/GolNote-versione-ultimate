@@ -25,27 +25,36 @@ export default function Teams() {
     [isInitialized, user?.role]
   );
 
-  // Hook per gestire squadre: carica, aggiunge, elimina, refresh
+  // Hook per gestire squadre: carica, aggiunge, elimina, modifica, refresh
   const {
     teams,
     loading,
     addTeam,
     deleteTeam,
+    updateTeam,
     refreshTeams,
   } = useTeams({ enabled });
 
   const [modalVisible, setModalVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [editingTeamId, setEditingTeamId] = useState<number | null>(null);
 
   // Gestisce aggiunta squadra con controllo duplicati
   const handleAddTeam = useCallback(
     async (teamData: {
-      name: string;
-      description: string;
-      color: string;
+      name?: string;
+      description?: string;
+      color?: string;
       password?: string;
     }) => {
-      const ok = await addTeam(teamData); // ownerUserId gestito automaticamente dall'hook
+      if (!teamData.name) return;
+
+      const ok = await addTeam({
+        name: teamData.name,
+        description: teamData.description || '',
+        color: teamData.color || '#22c55e',
+        password: teamData.password,
+      });
 
       if (!ok) {
         Alert.alert(
@@ -58,6 +67,32 @@ export default function Teams() {
       setModalVisible(false);
     },
     [addTeam]
+  );
+
+  // Gestisce modifica squadra
+  const handleEditTeam = useCallback(
+    async (teamData: {
+      name?: string;
+      description?: string;
+      color?: string;
+      password?: string;
+    }) => {
+      if (editingTeamId === null) return;
+
+      const ok = await updateTeam(editingTeamId, teamData);
+
+      if (!ok) {
+        Alert.alert(
+          'Nome già utilizzato',
+          'Esiste già una squadra con questo nome. Scegli un nome diverso.'
+        );
+        return;
+      }
+
+      setModalVisible(false);
+      setEditingTeamId(null);
+    },
+    [editingTeamId, updateTeam]
   );
 
   // Gestore pull-to-refresh
@@ -136,7 +171,7 @@ export default function Teams() {
           }
           contentContainerStyle={{ paddingBottom: 24 }}
       >
-      {teams.map((team: any) => (
+  {teams.map((team: any) => (
         <TeamCard
           key={String(team.id)}
           team={team}
@@ -149,17 +184,25 @@ export default function Teams() {
               },
             })
           }
+          onEdit={() => {
+            setEditingTeamId(team.id);
+            setModalVisible(true);
+          }}
           onDelete={() => askDeleteTeam(team.id, team.name)}
         />
       ))}
         </ScrollView>
       )}
 
-      {/* Modal per aggiungere nuova squadra */}
+      {/* Modal per aggiungere nuova squadra o modificare */}
       <AddTeamModal
         visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        onSave={handleAddTeam}
+        onClose={() => {
+          setModalVisible(false);
+          setEditingTeamId(null);
+        }}
+        onSave={editingTeamId === null ? handleAddTeam : handleEditTeam}
+        editTeam={editingTeamId !== null ? teams.find(t => t.id === editingTeamId) : undefined}
       />
     </View>
   );

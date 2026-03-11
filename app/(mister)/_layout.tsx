@@ -13,9 +13,9 @@ export default function MisterLayout() {
   useEffect(() => {
     if (loading) return; // Aspetta caricamento auth
 
-    if (!user?.role) {
-      // Nessun ruolo: vai a scelta auth per mister
-      router.replace({ pathname: '/(auth)/auth-choice', params: { role: 'mister' } });
+    if (!user) {
+      // Nessun utente: torna alla schermata iniziale di scelta ruolo
+      router.replace('/');
       return;
     }
 

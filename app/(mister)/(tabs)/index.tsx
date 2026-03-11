@@ -67,7 +67,7 @@ export default function MisterDashboard() {
     >
       {/* Messaggio di benvenuto con nickname dell'utente */}
       <Text style={styles.welcomeText}>
-        Benvenuto, {user?.nickname ?? 'Mister'} !
+        Benvenuto, {user?.displayNickname ?? user?.nickname ?? 'Mister'} !
       </Text>
 
       {/* Griglia di card statistiche */}

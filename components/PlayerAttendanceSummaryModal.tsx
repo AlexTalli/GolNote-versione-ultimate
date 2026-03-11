@@ -8,7 +8,7 @@ import {
   Animated,
 } from 'react-native';
 import { X } from 'lucide-react-native';
-import type { PlayerAttendanceSummary } from '@/database/database';
+import type { PlayerAttendanceSummary } from '@/database/database.supabase';
 
 type PlayerAttendanceSummaryModalProps = {
   visible: boolean;

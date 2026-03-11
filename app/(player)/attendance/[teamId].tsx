@@ -14,7 +14,7 @@ import { Calendar, LocaleConfig } from 'react-native-calendars';
 import type { DateData } from 'react-native-calendars';
 
 import { useDatabase, useTeamAttendancePublic } from '@/hooks/useDatabase';
-import type { AttendanceStatus } from '@/database/database';
+import type { AttendanceStatus } from '@/database/database.supabase';
 
 LocaleConfig.locales.it = {
   monthNames: [
@@ -44,6 +44,7 @@ const STATUS_OPTIONS: Array<{
   color: string;
 }> = [
   { value: 'present', shortLabel: 'P', fullLabel: 'Presente', color: '#16a34a' },
+  { value: 'late', shortLabel: 'R', fullLabel: 'Ritardo', color: '#f59e0b' },
   { value: 'absent_justified', shortLabel: 'AG', fullLabel: 'Assenza Giustificata', color: '#ea580c' },
   { value: 'absent_unjustified', shortLabel: 'AI', fullLabel: 'Assenza Ingiustificata', color: '#dc2626' },
   { value: 'injured', shortLabel: 'I', fullLabel: 'Infortunato', color: '#ee57bc' },
@@ -80,6 +81,7 @@ export default function PlayerAttendanceCalendarScreen() {
   const teamId = useMemo(() => Number(teamIdParam ?? -1), [teamIdParam]);
   const [selectedDate, setSelectedDate] = useState(() => toYmd(new Date()));
   const [refreshing, setRefreshing] = useState(false);
+  const [sortBy, setSortBy] = useState<'position' | 'name' | 'surname'>('position');
 
   const enabled = isInitialized && teamId > 0;
 
@@ -93,6 +95,41 @@ export default function PlayerAttendanceCalendarScreen() {
     setRefreshing(false);
   }, [refreshAttendance]);
 
+  const POSITION_ORDER: Record<string, number> = {
+    portiere: 0,
+    difensore: 1,
+    centrocampista: 2,
+    attaccante: 3,
+  };
+
+  const getSurnameKey = useCallback((row: (typeof rows)[number]) => {
+    const explicitSurname = row.player_surname?.trim();
+    if (explicitSurname) return explicitSurname;
+
+    const rawName = (row.player_first_name || row.player_name || '').trim();
+    const parts = rawName.split(' ').filter(Boolean);
+    return parts.length > 1 ? parts[parts.length - 1] : rawName;
+  }, []);
+
+  const getNameKey = useCallback((row: (typeof rows)[number]) => {
+    const rawName = (row.player_first_name || row.player_name || '').trim();
+    const parts = rawName.split(' ').filter(Boolean);
+    return parts.length > 1 ? parts[0] : rawName;
+  }, []);
+
+  const sortedRows = useMemo(() => {
+    return [...rows].sort((a, b) => {
+      if (sortBy === 'position') {
+        const posA = POSITION_ORDER[a.player_position?.toLowerCase()] ?? 99;
+        const posB = POSITION_ORDER[b.player_position?.toLowerCase()] ?? 99;
+        if (posA !== posB) return posA - posB;
+        return getSurnameKey(a).localeCompare(getSurnameKey(b), 'it', { sensitivity: 'base' });
+      }
+
+      return getSurnameKey(a).localeCompare(getSurnameKey(b), 'it', { sensitivity: 'base' });
+    });
+  }, [rows, sortBy, getSurnameKey]);
+
   if (!(teamId > 0)) {
     return (
       <SafeAreaView style={[styles.container, styles.centered]}>
@@ -105,7 +142,7 @@ export default function PlayerAttendanceCalendarScreen() {
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 8) }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <ArrowLeft size={20} color="#ffffff" />
+          <ArrowLeft size={20} color="#1f2937" />
         </TouchableOpacity>
 
         <Text style={styles.title} numberOfLines={1}>
@@ -148,16 +185,38 @@ export default function PlayerAttendanceCalendarScreen() {
           ))}
         </View>
 
+        <View style={styles.sortBar}>
+          <Text style={styles.sortLabel}>Ordina per:</Text>
+          <View style={styles.sortButtons}>
+            <TouchableOpacity
+              style={[styles.sortBtn, sortBy === 'position' && styles.sortBtnActive]}
+              onPress={() => setSortBy('position')}
+            >
+              <Text style={[styles.sortBtnText, sortBy === 'position' && styles.sortBtnTextActive]}>
+                Ruolo
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.sortBtn, sortBy === 'surname' && styles.sortBtnActive]}
+              onPress={() => setSortBy('surname')}
+            >
+              <Text style={[styles.sortBtnText, sortBy === 'surname' && styles.sortBtnTextActive]}>
+                Cognome
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {loading ? (
           <View style={{ paddingVertical: 24, alignItems: 'center' }}>
             <Text>Caricamento giocatori...</Text>
           </View>
-        ) : rows.length === 0 ? (
+        ) : sortedRows.length === 0 ? (
           <View style={{ paddingVertical: 24, alignItems: 'center' }}>
             <Text style={{ color: '#6b7280' }}>Nessun giocatore in questa squadra.</Text>
           </View>
         ) : (
-          rows.map((row) => {
+          sortedRows.map((row, index) => {
             const current = row.attendance_status ? STATUS_BY_VALUE[row.attendance_status] : null;
 
             return (
@@ -180,7 +239,7 @@ export default function PlayerAttendanceCalendarScreen() {
                     <Text style={styles.playerName}>{row.player_name}</Text>
                     <ChevronRight size={16} color="#9ca3af" />
                   </View>
-                  <Text style={styles.playerSub}>#{row.player_number} · {row.player_position}</Text>
+                  <Text style={styles.playerSub}>#{index + 1} · {row.player_position}</Text>
                 </View>
 
                 <View
@@ -269,6 +328,43 @@ const styles = StyleSheet.create({
     color: '#4b5563',
     fontSize: 12,
     fontWeight: '700',
+  },
+
+  sortBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sortLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6b7280',
+    marginRight: 10,
+  },
+  sortButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    flex: 1,
+  },
+  sortBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    backgroundColor: '#ffffff',
+  },
+  sortBtnActive: {
+    backgroundColor: '#2e70b7ff',
+    borderColor: '#2e70b7ff',
+  },
+  sortBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  sortBtnTextActive: {
+    color: '#ffffff',
   },
 
   playerRow: {

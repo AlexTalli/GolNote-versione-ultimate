@@ -18,7 +18,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { ArrowLeft, CalendarDays, Trash2, UserX } from 'lucide-react-native';
 
 // Database per caricare i giocatori
-import { playersDB, Player, usersDB } from '@/database/database';
+import { playersDB, Player, usersDB } from '@/database/database.supabase';
 
 // Componente per mostrare la card del giocatore
 import { PlayerCard } from '@/components/PlayerCard';
@@ -39,6 +39,7 @@ export default function PlayerTeamScreen() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [sortBy, setSortBy] = useState<'surname' | 'position'>('surname');
 
   /* ========== FUNZIONI DI CARICAMENTO ========== */
 
@@ -132,18 +133,20 @@ export default function PlayerTeamScreen() {
 
   const sortedPlayers = useMemo(() => {
   return [...players].sort((a, b) => {
-    const posA = POSITION_ORDER[a.position?.toLowerCase()] ?? 99;
-    const posB = POSITION_ORDER[b.position?.toLowerCase()] ?? 99;
-
-    // 1️⃣ Ordine per ruolo
-    if (posA !== posB) {
-      return posA - posB;
+    if (sortBy === 'position') {
+      // Ordine per ruolo, poi alfabetico per nome
+      const posA = POSITION_ORDER[a.position?.toLowerCase()] ?? 99;
+      const posB = POSITION_ORDER[b.position?.toLowerCase()] ?? 99;
+      if (posA !== posB) return posA - posB;
+      return a.name.localeCompare(b.name, 'it', { sensitivity: 'base' });
+    } else {
+      // Ordine alfabetico per cognome
+      const surnameA = a.surname || a.name.split(' ').pop() || a.name;
+      const surnameB = b.surname || b.name.split(' ').pop() || b.name;
+      return surnameA.localeCompare(surnameB, 'it', { sensitivity: 'base' });
     }
-
-    // 2️⃣ Stesso ruolo → ordine alfabetico
-    return a.name.localeCompare(b.name, 'it', { sensitivity: 'base' });
   });
-}, [players]);
+}, [players, sortBy]);
 
   /* ========== RENDERING ========== */
 
@@ -198,6 +201,29 @@ export default function PlayerTeamScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
+        {/* Sort buttons */}
+        <View style={s.sortBar}>
+          <Text style={s.sortLabel}>Ordina per:</Text>
+          <View style={s.sortButtons}>
+            <TouchableOpacity
+              style={[s.sortBtn, sortBy === 'position' && s.sortBtnActive]}
+              onPress={() => setSortBy('position')}
+            >
+              <Text style={[s.sortBtnText, sortBy === 'position' && s.sortBtnTextActive]}>
+                Ruolo
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.sortBtn, sortBy === 'surname' && s.sortBtnActive]}
+              onPress={() => setSortBy('surname')}
+            >
+              <Text style={[s.sortBtnText, sortBy === 'surname' && s.sortBtnTextActive]}>
+                Cognome
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <TouchableOpacity
           style={s.attendanceCta}
           onPress={() =>
@@ -223,10 +249,12 @@ export default function PlayerTeamScreen() {
             <Text style={{ color: '#6b7280' }}>Nessun giocatore.</Text>
           </View>
         ) : (
-          sortedPlayers.map((p) => (
+          sortedPlayers.map((p, index) => (
             <PlayerCard
               key={String(p.id)}
               player={p}
+              index={index + 1}
+              isCurrentPlayer={p.id === user?.playerId}
               onPress={() =>
                 router.push({
                   pathname: '/(player)/[playerId]/fines',
@@ -269,6 +297,45 @@ const s = StyleSheet.create({
     marginRight: 8,
   },
 
+  sortBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 4,
+  },
+  sortLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6b7280',
+    marginRight: 12,
+  },
+  sortButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    flex: 1,
+  },
+  sortBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    backgroundColor: '#ffffff',
+  },
+  sortBtnActive: {
+    backgroundColor: '#2e70b7ff',
+    borderColor: '#2e70b7ff',
+  },
+  sortBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  sortBtnTextActive: {
+    color: '#ffffff',
+  },
+  
+  
   // Pulsante dissocia giocatore
   unlinkBtn: {
     width: 32,

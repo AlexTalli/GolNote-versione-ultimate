@@ -17,8 +17,12 @@ import { useDatabase, useFines } from '@/hooks/useDatabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { FineCard } from '@/components/FineCard';
 import { AddFineModal } from '@/components/AddFineModal';
+import { DashboardCard } from '@/components/DashboardCard';
 
-import {scheduleFineDueNotification,cancelFineDueNotificationByFineId,} from '@/utils/notifications';
+import {
+  scheduleFineDueNotification,
+  cancelFineDueNotificationByFineId,
+} from '@/utils/notifications';
 
 type FilterKind = 'all' | 'pending' | 'paid' | 'overdue';
 
@@ -97,17 +101,21 @@ export default function PlayerFinesScreen() {
       // 2) chiudi subito modal
       setModalVisible(false);
 
-      // 3) schedula in async (non blocca UI)
+      // 3) schedula notifiche in async (non blocca UI)
       (async () => {
         try {
+          // Notifica del giorno prima per il mister
           await scheduleFineDueNotification(
             fineData.due_date,
             safePlayerName,
             safeTeamName,
             fineId 
           );
+          
+          // La notifica immediata per il player arriverà tramite il polling nel player layout
+          console.log('[NOTIF] New fine created - player will receive notification via polling');
         } catch (e) {
-          console.log('Errore scheduleFineDueNotification:', e);
+          console.log('Errore scheduling notifications:', e);
         }
       })();
 
@@ -188,6 +196,24 @@ export default function PlayerFinesScreen() {
     });
   }, [fines, filter]);
 
+  const stats = useMemo(() => {
+    const totalAmount = fines.reduce((sum: number, f: any) => sum + Number(f.amount || 0), 0);
+    const paidAmount = fines
+      .filter((f: any) => !!f.is_paid)
+      .reduce((sum: number, f: any) => sum + Number(f.amount || 0), 0);
+    const activeFines = fines.filter((f: any) => !f.is_paid).length;
+    const unpaidAmount = Math.max(totalAmount - paidAmount, 0);
+
+    return {
+      activeFines,
+      totalAmount,
+      paidAmount,
+      unpaidAmount,
+    };
+  }, [fines]);
+
+  const fmtEuro = (n: number) => `${n.toFixed(2)}€`;
+
   // Loading gate
   if (!enabled || loading) {
     return (
@@ -261,6 +287,33 @@ export default function PlayerFinesScreen() {
         }
         keyboardShouldPersistTaps="handled"
       >
+        <View style={s.statsGrid}>
+          <DashboardCard
+            title="Multe Attive"
+            value={String(stats.activeFines)}
+            icon="alert-circle"
+            color="#ef4444"
+          />
+          <DashboardCard
+            title="Totale Multe"
+            value={fmtEuro(stats.totalAmount)}
+            icon="euro"
+            color="#f59e0b"
+          />
+          <DashboardCard
+            title="Multe Pagate"
+            value={fmtEuro(stats.paidAmount)}
+            icon="check-circle"
+            color="#22c55e"
+          />
+          <DashboardCard
+            title="Multe da Pagare"
+            value={fmtEuro(stats.unpaidAmount)}
+            icon="alert-circle"
+            color="#f97316"
+          />
+        </View>
+
         {filteredFines.length === 0 ? (
           <View style={[s.center, { paddingVertical: 48 }]}>
             <Text style={{ color: '#6b7280', textAlign: 'center' }}>
@@ -360,4 +413,11 @@ const s = StyleSheet.create({
   },
 
   list: { flex: 1, paddingHorizontal: 16, paddingTop: 12 },
+
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
 });

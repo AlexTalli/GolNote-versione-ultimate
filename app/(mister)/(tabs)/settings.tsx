@@ -15,10 +15,11 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
+  TextInput,
   ScrollView as RNScrollView,
   RefreshControl,
 } from 'react-native';
-import { Download, Bell, Trash2, Info, LogOut } from 'lucide-react-native';
+import { Download, Bell, Trash2, Info, LogOut, Edit } from 'lucide-react-native';
 import { router } from 'expo-router';
 
 import { useAuth } from '@/contexts/AuthContext';
@@ -28,7 +29,8 @@ import { useRole } from '@/contexts/RoleContext';
 import {
   clearAllDataForMister,
   deleteMisterAccount,
-} from '@/database/database';
+  usersDB,
+} from '@/database/database.supabase';
 
 // Export utilities
 import { exportMisterFinesXLSX } from '@/utils/exportToXlsx';
@@ -45,7 +47,7 @@ import * as Sharing from 'expo-sharing';
 export default function MisterSettings() {
   /* ========== HOOKS E STATI ========== */
 
-  const { logout, user } = useAuth();
+  const { logout, user, setUser } = useAuth();
   const { setRole, setPlayerIdentity } = useRole();
 
   // Stati per le operazioni asincrone
@@ -55,6 +57,9 @@ export default function MisterSettings() {
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [exportPickerVisible, setExportPickerVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [nicknameModalVisible, setNicknameModalVisible] = useState(false);
+  const [newDisplayNickname, setNewDisplayNickname] = useState('');
+  const [savingNickname, setSavingNickname] = useState(false);
 
   // Stati per le notifiche settimanali
   const [weeklyEnabled, setWeeklyEnabled] = useState(false);
@@ -255,8 +260,50 @@ export default function MisterSettings() {
 
     setRole(null);
     setPlayerIdentity({ playerId: null });
+    router.dismissAll();
     router.replace('/');
   };
+
+  const openNicknameModal = useCallback(() => {
+    const current = user?.displayNickname || user?.nickname || '';
+    setNewDisplayNickname(current);
+    setNicknameModalVisible(true);
+  }, [user?.displayNickname, user?.nickname]);
+
+  const handleSaveDisplayNickname = useCallback(async () => {
+    if (!user?.id) {
+      Alert.alert('Errore', 'Utente non valido.');
+      return;
+    }
+
+    const next = newDisplayNickname.trim();
+    if (!next) {
+      Alert.alert('Errore', 'Il nickname visualizzato non può essere vuoto.');
+      return;
+    }
+
+    try {
+      setSavingNickname(true);
+      const ok = await usersDB.updateDisplayNickname(user.id, next);
+      if (!ok) {
+        Alert.alert('Errore', 'Impossibile aggiornare il nickname.');
+        return;
+      }
+
+      await setUser({
+        ...user,
+        displayNickname: next,
+      });
+
+      setNicknameModalVisible(false);
+      Alert.alert('Completato', 'Nickname aggiornato con successo.');
+    } catch (e) {
+      console.error('Errore aggiornamento nickname visualizzato:', e);
+      Alert.alert('Errore', 'Non è stato possibile aggiornare il nickname.');
+    } finally {
+      setSavingNickname(false);
+    }
+  }, [newDisplayNickname, setUser, user]);
 
   /* ========== RENDERING ========== */
 
@@ -363,6 +410,20 @@ export default function MisterSettings() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
 
+          <TouchableOpacity
+            style={styles.option}
+            onPress={openNicknameModal}
+            disabled={savingNickname}
+          >
+            <Edit size={20} color="#daa520" />
+            <View style={styles.optionContent}>
+              <Text style={styles.optionTitle}>Modifica Nickname</Text>
+              <Text style={styles.optionDescription}>
+                Attuale: {user?.displayNickname ?? user?.nickname ?? 'Mister'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.option} onPress={handleChangeRole}>
             <LogOut size={20} color="#6b7280" />
             <View style={styles.optionContent}>
@@ -402,11 +463,11 @@ export default function MisterSettings() {
           <TouchableOpacity style={styles.option}>
             <Info size={20} color="#6b7280" />
             <View style={styles.optionContent}>
-              <Text style={styles.optionTitle}>GolNote – Modalità Mister</Text>
+              <Text style={styles.optionTitle}>GolNote – Cosa posso fare?</Text>
               <Text style={styles.optionDescription}>
                 • Crea e gestisci le tue squadre{"\n"}
                 • Aggiungi i giocatori e assegna le multe{"\n"}
-                • Tieni traccia di pagato / non pagato{"\n"}
+                • Tieni traccia delle multe assegnate (pagata / non pagata){"\n"}
                 • Aggiorna il calendario delle presenze agli allenamenti{"\n"}
                 • Esporta in Excel per condividere il calendario o il resoconto delle multe{"\n"}
                 • Attiva promemoria settimanali{"\n"}
@@ -416,6 +477,55 @@ export default function MisterSettings() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={nicknameModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNicknameModalVisible(false)}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <Text style={styles.modalTitle}>Modifica nickname</Text>
+            <Text style={styles.modalSubtitle}>
+              Questo cambia solo il nome visualizzato di benvenuto. Le credenziali di accesso restano uguali.
+            </Text>
+
+            <TextInput
+              style={styles.nicknameInput}
+              value={newDisplayNickname}
+              onChangeText={setNewDisplayNickname}
+              placeholder="Inserisci nuovo nickname"
+              autoCapitalize="none"
+              autoCorrect={false}
+              maxLength={30}
+              editable={!savingNickname}
+            />
+
+            <View style={styles.modalActionsBetween}>
+              <TouchableOpacity
+                style={styles.modalCancel}
+                onPress={() => setNicknameModalVisible(false)}
+                disabled={savingNickname}
+              >
+                <Text style={styles.modalCancelText}>Annulla</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalSave, savingNickname && styles.modalSaveDisabled]}
+                onPress={handleSaveDisplayNickname}
+                disabled={savingNickname}
+              >
+                {savingNickname ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={styles.modalSaveText}>Salva</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* ============= SCELTA SQUADRA - ESPORTAZIONE EXCEL ============= */}
       <Modal
@@ -592,6 +702,13 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
 
+  modalActionsBetween: {
+    marginTop: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+
   // Pulsante annulla del modal
   modalCancel: {
     paddingVertical: 8,
@@ -606,5 +723,37 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: '#374151',
+  },
+
+  nicknameInput: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: '#111827',
+    backgroundColor: '#f9fafb',
+  },
+
+  modalSave: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#2563eb',
+    minWidth: 82,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  modalSaveDisabled: {
+    opacity: 0.7,
+  },
+
+  modalSaveText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ffffff',
   },
 });

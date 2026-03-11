@@ -13,6 +13,7 @@ import { ArrowLeft, Filter } from 'lucide-react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDatabase, useFines } from '@/hooks/useDatabase';
 import { FineCard } from '@/components/FineCard';
+import { DashboardCard } from '@/components/DashboardCard';
 
 type FilterKind = 'all' | 'pending' | 'paid' | 'overdue';
 
@@ -74,6 +75,24 @@ export default function PlayerFinesScreen() {
       }
     });
   }, [fines, filter]);
+
+  const stats = useMemo(() => {
+    const totalAmount = fines.reduce((sum: number, f: any) => sum + Number(f.amount || 0), 0);
+    const paidAmount = fines
+      .filter((f: any) => !!f.is_paid)
+      .reduce((sum: number, f: any) => sum + Number(f.amount || 0), 0);
+    const activeFines = fines.filter((f: any) => !f.is_paid).length;
+    const unpaidAmount = Math.max(totalAmount - paidAmount, 0);
+
+    return {
+      activeFines,
+      totalAmount,
+      paidAmount,
+      unpaidAmount,
+    };
+  }, [fines]);
+
+  const fmtEuro = (n: number) => `${n.toFixed(2)}€`;
 
   // Loading gate
   if (!enabled || loading) {
@@ -140,6 +159,33 @@ export default function PlayerFinesScreen() {
         }
         keyboardShouldPersistTaps="handled"
       >
+        <View style={s.statsGrid}>
+          <DashboardCard
+            title="Multe Attive"
+            value={String(stats.activeFines)}
+            icon="alert-circle"
+            color="#ef4444"
+          />
+          <DashboardCard
+            title="Totale Multe"
+            value={fmtEuro(stats.totalAmount)}
+            icon="euro"
+            color="#f59e0b"
+          />
+          <DashboardCard
+            title="Multe Pagate"
+            value={fmtEuro(stats.paidAmount)}
+            icon="check-circle"
+            color="#22c55e"
+          />
+          <DashboardCard
+            title="Multe da Pagare"
+            value={fmtEuro(stats.unpaidAmount)}
+            icon="alert-circle"
+            color="#f97316"
+          />
+        </View>
+
         {filteredFines.length === 0 ? (
           <View style={[s.center, { paddingVertical: 48 }]}>
             <Text style={{ color: '#6b7280', textAlign: 'center' }}>
@@ -217,4 +263,11 @@ const s = StyleSheet.create({
   },
 
   list: { flex: 1, paddingHorizontal: 16, paddingTop: 12 },
+
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
 });

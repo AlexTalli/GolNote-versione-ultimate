@@ -19,11 +19,17 @@ interface AddTeamModalProps {
   visible: boolean;
   onClose: () => void;
   onSave: (teamData: {
+    name?: string;
+    description?: string;
+    color?: string;
+    password?: string;
+  }) => Promise<void> | void;
+  editTeam?: {
+    id: number;
     name: string;
     description: string;
     color: string;
-    password?: string;
-  }) => void;
+  };
 }
 
 /* ========== PALETTE COLORI ========== */
@@ -51,7 +57,7 @@ const extendedPalette = [
 
 /* ========== COMPONENTE ========== */
 
-export function AddTeamModal({ visible, onClose, onSave }: AddTeamModalProps) {
+export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModalProps) {
   /* ========== STATI ========== */
 
   // Stati per i campi del form
@@ -67,6 +73,23 @@ export function AddTeamModal({ visible, onClose, onSave }: AddTeamModalProps) {
 
   /* Stato per mostrare/nascondere palette colori estesa */
   const [customVisible, setCustomVisible] = useState(false);
+
+  // Carica i dati della squadra quando il modal si apre con editTeam
+  useMemo(() => {
+    if (visible && editTeam) {
+      setName(editTeam.name);
+      setDescription(editTeam.description);
+      setSelectedColor(editTeam.color);
+      setPassword('');
+      setPassword2('');
+    } else if (visible) {
+      setName('');
+      setDescription('');
+      setSelectedColor(baseColors[4]);
+      setPassword('');
+      setPassword2('');
+    }
+  }, [visible, editTeam]);
 
   /* ========== VALIDAZIONI ========== */
 
@@ -136,7 +159,7 @@ export function AddTeamModal({ visible, onClose, onSave }: AddTeamModalProps) {
           <View style={styles.header}>
             <View style={styles.titleWrap}>
               <Shield size={18} color="#1f2937" />
-              <Text style={styles.title}>Aggiungi Squadra</Text>
+              <Text style={styles.title}>{editTeam ? 'Modifica Squadra' : 'Aggiungi Squadra'}</Text>
             </View>
             <TouchableOpacity onPress={handleClose}>
               <X size={24} color="#6b7280" />

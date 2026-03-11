@@ -15,9 +15,8 @@ import { Calendar, LocaleConfig } from 'react-native-calendars';
 import {
   useDatabase,
   usePlayerAttendanceHistory,
-  usePlayerAttendanceSummary,
 } from '@/hooks/useDatabase';
-import type { AttendanceStatus } from '@/database/database';
+import type { AttendanceStatus } from '@/database/database.supabase';
 
 LocaleConfig.locales.it = {
   monthNames: [
@@ -61,6 +60,10 @@ const STATUS_LABELS: Record<string, string> = {
 export default function PlayerAttendanceDetailScreen() {
   const insets = useSafeAreaInsets();
   const { isInitialized } = useDatabase();
+  const todayMonthKey = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }, []);
 
   const { teamId: teamIdParam, playerId: playerIdParam, playerName } = useLocalSearchParams<{
     teamId?: string;
@@ -71,6 +74,7 @@ export default function PlayerAttendanceDetailScreen() {
   const teamId = useMemo(() => Number(teamIdParam ?? -1), [teamIdParam]);
   const playerId = useMemo(() => Number(playerIdParam ?? -1), [playerIdParam]);
   const [refreshing, setRefreshing] = useState(false);
+  const [currentMonthKey, setCurrentMonthKey] = useState(todayMonthKey);
 
   const enabled = isInitialized && teamId > 0 && playerId > 0;
 
@@ -79,7 +83,26 @@ export default function PlayerAttendanceDetailScreen() {
     playerId
   );
 
-  const { summary, loading: summaryLoading } = usePlayerAttendanceSummary(teamId, playerId);
+  const monthSummary = useMemo(() => {
+    const inMonth = history.filter((entry) => entry.date?.startsWith(currentMonthKey));
+
+    return {
+      total_sessions: inMonth.length,
+      present: inMonth.filter((entry) => entry.status === 'present').length,
+      late: inMonth.filter((entry) => entry.status === 'late').length,
+      absent_justified: inMonth.filter((entry) => entry.status === 'absent_justified').length,
+      absent_unjustified: inMonth.filter((entry) => entry.status === 'absent_unjustified').length,
+      injured: inMonth.filter((entry) => entry.status === 'injured').length,
+      sick: inMonth.filter((entry) => entry.status === 'sick').length,
+    };
+  }, [history, currentMonthKey]);
+
+  const monthLabel = useMemo(() => {
+    const [year, month] = currentMonthKey.split('-');
+    const monthIndex = Number(month) - 1;
+    const monthName = LocaleConfig.locales.it.monthNames?.[monthIndex] || currentMonthKey;
+    return `${monthName} ${year}`;
+  }, [currentMonthKey]);
 
   // Build markedDates from history
   const markedDates = useMemo(() => {
@@ -121,7 +144,7 @@ export default function PlayerAttendanceDetailScreen() {
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 8) }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <ArrowLeft size={20} color="#ffffff" />
+          <ArrowLeft size={20} color="#1f2937" />
         </TouchableOpacity>
 
         <Text style={styles.title} numberOfLines={1}>
@@ -142,6 +165,10 @@ export default function PlayerAttendanceDetailScreen() {
           <>
             <Calendar
               markedDates={markedDates}
+              current={`${currentMonthKey}-01`}
+              onMonthChange={(m) => {
+                setCurrentMonthKey(`${m.year}-${String(m.month).padStart(2, '0')}`);
+              }}
               theme={{
                 todayTextColor: '#2563eb',
                 arrowColor: '#2563eb',
@@ -162,59 +189,57 @@ export default function PlayerAttendanceDetailScreen() {
               ))}
             </View>
 
-            {!summaryLoading && (
-              <View style={styles.summarySection}>
-                <Text style={styles.summaryTitle}>Riepilogo</Text>
+            <View style={styles.summarySection}>
+              <Text style={styles.summaryTitle}>Riepilogo - {monthLabel}</Text>
 
-                <Text style={styles.summarySubtitle}>
-                  Totale allenamenti: <Text style={{ fontWeight: 'bold' }}>{summary.total_sessions}</Text>
-                </Text>
+              <Text style={styles.summarySubtitle}>
+                Totale allenamenti: <Text style={{ fontWeight: 'bold' }}>{monthSummary.total_sessions}</Text>
+              </Text>
 
-                <View style={styles.summaryGrid}>
-                  <View style={styles.summaryItem}>
-                    <Text style={styles.summaryLabel}>Presenze</Text>
-                    <Text style={[styles.summaryValue, { color: STATUS_COLOR.present }]}>
-                      {summary.present}
-                    </Text>
-                  </View>
+              <View style={styles.summaryGrid}>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Presenze</Text>
+                  <Text style={[styles.summaryValue, { color: STATUS_COLOR.present }]}> 
+                    {monthSummary.present}
+                  </Text>
+                </View>
 
-                  <View style={styles.summaryItem}>
-                    <Text style={styles.summaryLabel}>Ritardi</Text>
-                    <Text style={[styles.summaryValue, { color: STATUS_COLOR.late }]}>
-                      {summary.late}
-                    </Text>
-                  </View>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Ritardi</Text>
+                  <Text style={[styles.summaryValue, { color: STATUS_COLOR.late }]}> 
+                    {monthSummary.late}
+                  </Text>
+                </View>
 
-                  <View style={styles.summaryItem}>
-                    <Text style={styles.summaryLabel}>Assenze Giustificate</Text>
-                    <Text style={[styles.summaryValue, { color: STATUS_COLOR.absent_justified }]}>
-                      {summary.absent_justified}
-                    </Text>
-                  </View>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Assenze Giustificate</Text>
+                  <Text style={[styles.summaryValue, { color: STATUS_COLOR.absent_justified }]}> 
+                    {monthSummary.absent_justified}
+                  </Text>
+                </View>
 
-                  <View style={styles.summaryItem}>
-                    <Text style={styles.summaryLabel}>Assenze Ingiustificate</Text>
-                    <Text style={[styles.summaryValue, { color: STATUS_COLOR.absent_unjustified }]}>
-                      {summary.absent_unjustified}
-                    </Text>
-                  </View>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Assenze Ingiustificate</Text>
+                  <Text style={[styles.summaryValue, { color: STATUS_COLOR.absent_unjustified }]}> 
+                    {monthSummary.absent_unjustified}
+                  </Text>
+                </View>
 
-                  <View style={styles.summaryItem}>
-                    <Text style={styles.summaryLabel}>Infortuni</Text>
-                    <Text style={[styles.summaryValue, { color: STATUS_COLOR.injured }]}>
-                      {summary.injured}
-                    </Text>
-                  </View>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Infortuni</Text>
+                  <Text style={[styles.summaryValue, { color: STATUS_COLOR.injured }]}> 
+                    {monthSummary.injured}
+                  </Text>
+                </View>
 
-                  <View style={styles.summaryItem}>
-                    <Text style={styles.summaryLabel}>Malattie</Text>
-                    <Text style={[styles.summaryValue, { color: STATUS_COLOR.sick }]}>
-                      {summary.sick}
-                    </Text>
-                  </View>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Malattie</Text>
+                  <Text style={[styles.summaryValue, { color: STATUS_COLOR.sick }]}> 
+                    {monthSummary.sick}
+                  </Text>
                 </View>
               </View>
-            )}
+            </View>
           </>
         )}
       </ScrollView>

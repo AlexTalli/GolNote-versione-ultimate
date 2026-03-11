@@ -190,7 +190,7 @@ export function AddFineModal({ visible, onClose, onSave, presetPlayerId }: AddFi
                     >
                       <Text style={styles.playerNumber}>#{p.number}</Text>
                       <Text style={[styles.playerName, selectedPlayerId === p.id && styles.selectedPlayerText]}>
-                        {p.name}
+                        {p.surname ? `${p.surname} ${p.name}` : p.name}
                       </Text>
                     </TouchableOpacity>
                   ))}

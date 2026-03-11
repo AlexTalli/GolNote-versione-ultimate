@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { ChevronRight, CircleAlert as AlertCircle, Trash2 } from 'lucide-react-native';
+import { ChevronRight, CircleAlert as AlertCircle, Trash2, Edit } from 'lucide-react-native';
 
 /* ========== TIPI ========== */
 
@@ -8,33 +8,40 @@ type PlayerCardProps = {
   player: {
     id: number;
     name: string;
+    surname?: string;
     number: string | number;
     position: string;
     active_fines?: number; // Numero di multe attive (opzionale)
     total_unpaid?: number; // Totale non pagato (opzionale)
   };
+  index: number; // Posizione nella lista (1-based)
   onPress: () => void; // Funzione chiamata quando si preme la card
   onDelete?: () => void; // prop (opzionale) per eliminare il giocatore
+  onEdit?: () => void; // prop (opzionale) per modificare il giocatore
+  isCurrentPlayer?: boolean; // Se è il giocatore loggato (per evidenziarlo)
 };
 
 /* ========== COMPONENTE ========== */
 
-export function PlayerCard({ player, onPress, onDelete }: PlayerCardProps) {
+export function PlayerCard({ player, index, onPress, onDelete, onEdit, isCurrentPlayer }: PlayerCardProps) {
   // Conversione sicura dei valori delle multe (default a 0 se undefined)
   const active = Number(player.active_fines ?? 0);
   const unpaid = Number(player.total_unpaid ?? 0);
 
+  // Costruisci il nome completo (Cognome Nome)
+  const fullName = player.surname ? `${player.surname} ${player.name}` : player.name;
+
   /* ========== RENDERING ========== */
 
   return (
-    <View style={s.card}>
+    <View style={[s.card, isCurrentPlayer && s.cardCurrent]}>
       {/* Parte sinistra tappabile: mostra numero, nome e ruolo, apre dettaglio giocatore */}
       <TouchableOpacity style={s.left} onPress={onPress} activeOpacity={0.9}>
         <View style={s.numberBadge}>
-          <Text style={s.numberText}>{String(player.number)}</Text>
+          <Text style={s.numberText}>#{index}</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={s.name} numberOfLines={1}>{player.name}</Text>
+          <Text style={s.name} numberOfLines={1}>{fullName}</Text>
           <Text style={s.role} numberOfLines={1}>{player.position}</Text>
         </View>
       </TouchableOpacity>
@@ -51,9 +58,16 @@ export function PlayerCard({ player, onPress, onDelete }: PlayerCardProps) {
         <ChevronRight size={18} color="#9ca3af" />
       </TouchableOpacity>
 
+      {/* Pulsante matita per modificare il giocatore (solo se onEdit è fornito) */}
+      {onEdit && (
+        <TouchableOpacity style={s.editBtn} onPress={(e) => { e.stopPropagation(); onEdit(); }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Edit size={18} color="#daa520" />
+        </TouchableOpacity>
+      )}
+
       {/* Pulsante cestino per eliminare il giocatore (solo se onDelete è fornito) */}
       {onDelete && (
-        <TouchableOpacity style={s.trashBtn} onPress={onDelete} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <TouchableOpacity style={s.trashBtn} onPress={(e) => { e.stopPropagation(); onDelete(); }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Trash2 size={18} color="#ef4444" />
         </TouchableOpacity>
       )}
@@ -80,6 +94,13 @@ const s = StyleSheet.create({
     elevation: 3,
 
     marginBottom: 14,
+  },
+
+  // Stile per evidenziare il giocatore corrente
+  cardCurrent: {
+    backgroundColor: '#dbeafe',
+    borderWidth: 2,
+    borderColor: '#2563eb',
   },
 
   // Parte sinistra: numero, nome e ruolo
@@ -112,6 +133,9 @@ const s = StyleSheet.create({
 
   // Importo totale non pagato
   amount: { fontSize: 14, fontWeight: '700', color: '#111827', minWidth: 64, textAlign: 'right' },
+
+  // Pulsante matita per modificare
+  editBtn: { marginLeft: 8 },
 
   // Pulsante cestino per eliminare
   trashBtn: { marginLeft: 8 }, // spazio a destra della card

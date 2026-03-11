@@ -1,16 +1,19 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Crypto from 'expo-crypto';
-import { usersDB } from '@/database/database';
+import { supabase } from '@/lib/supabase';
 
-// Tipi per il ruolo dell'app e l'utente
 export type AppRole = 'mister' | 'player';
-export type AppUser = { id: number; role: AppRole; nickname: string; playerId?: number | null };
+export type AppUser = {
+  id: string;
+  role: AppRole;
+  nickname: string;
+  displayNickname?: string;
+  playerId?: number | null;
+};
 
-// Interfaccia del contesto di autenticazione
 type AuthCtx = {
   user: AppUser | null;
-  loading: boolean;               
+  loading: boolean;
   login: (nickname: string, password: string, role: AppRole) => Promise<string | null>;
   register: (nickname: string, password: string, role: AppRole) => Promise<string | null>;
   logout: () => Promise<void>;
@@ -20,121 +23,262 @@ type AuthCtx = {
 };
 
 const Ctx = createContext<AuthCtx | undefined>(undefined);
+const SESSION_KEY = '@session:v2';
 
-// Chiave per salvare la sessione in AsyncStorage
-const SESSION_KEY = '@session:v1';
-
-// Funzione per hashare la password usando SHA256
-async function hashPassword(password: string) {
-  return await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, password);
-}
-
-// Provider del contesto di autenticazione
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  // Stato dell'utente corrente
   const [user, setUser] = useState<AppUser | null>(null);
-  // Stato di caricamento
-  const [loading, setLoading] = useState(true);  
+  const [loading, setLoading] = useState(true);
 
-  // Effetto per ripristinare la sessione dal storage all'avvio
   useEffect(() => {
+    let mounted = true;
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(SESSION_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed?.id && parsed?.role) {
-            setUser(parsed);
+        const { data } = await supabase.auth.getSession();
+        if (!data?.session) {
+          if (mounted) {
+            setUser(null);
+            setLoading(false);
           }
+          return;
         }
-      } finally {
-        setLoading(false);
+
+        const userId = data.session.user.id;
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .single();
+
+        if (error || !profile) {
+          console.error('[AuthContext] Profile not found:', error);
+          await supabase.auth.signOut();
+          if (mounted) {
+            setUser(null);
+            setLoading(false);
+          }
+          return;
+        }
+
+        if (mounted) {
+          setUser({
+            id: profile.id,
+            role: profile.role,
+            nickname: profile.nickname,
+            displayNickname: profile.display_nickname,
+            playerId: profile.player_id,
+          });
+          setLoading(false);
+        }
+      } catch (e) {
+        console.error('[AuthContext] Init error:', e);
+        if (mounted) {
+          setUser(null);
+          setLoading(false);
+        }
       }
     })();
+    return () => { mounted = false; };
   }, []);
 
-  // Funzione di login
-  const login: AuthCtx['login'] = async (nickname, password, role) => {
-    setLoading(true);
+  const login = async (nickname: string, password: string, role: AppRole): Promise<string | null> => {
     try {
-      // Trova l'utente per nickname
-      const row = await usersDB.findByNickname(nickname);
-      if (!row) return 'Utente non trovato';
-      if (row.role !== role) return 'Ruolo non corretto per questo utente';
+      const cleanNickname = nickname.trim().toLowerCase();
+      const email = `${cleanNickname}@golnote.local`;
 
-      // Verifica la password
-      const hash = await hashPassword(password);
-      if (row.password_hash !== hash) return 'Password errata';
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-      // Crea l'oggetto utente e salva la sessione
-      const next: AppUser = { id: row.id, role: row.role, nickname: row.nickname, playerId: row.player_id ?? null };
-      setUser(next);
-      await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(next));
+      if (error) {
+        const msg = (error.message || '').toLowerCase();
+        const isInvalidCredentials =
+          msg.includes('invalid login credentials') ||
+          msg.includes('invalid credentials');
+
+        if (!isInvalidCredentials) {
+          console.error('[AuthContext] Login error:', error);
+        }
+        return 'Credenziali non valide';
+      }
+
+      if (!data.user) {
+        return 'Errore durante il login';
+      }
+
+      const userId = data.user.id;
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (profileError || !profile) {
+        console.error('[AuthContext] Profile not found, creating recovery profile');
+        const { error: upsertError } = await supabase
+          .from('profiles')
+          .upsert({
+            id: userId,
+            role,
+            nickname: cleanNickname,
+            display_nickname: nickname,
+          }, { onConflict: 'id' });
+
+        if (upsertError) {
+          console.error('[AuthContext] Recovery profile creation failed:', upsertError);
+          return 'Errore durante il recupero del profilo';
+        }
+
+        const { data: newProfile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .single();
+
+        if (!newProfile) {
+          return 'Errore durante il login';
+        }
+
+        setUser({
+          id: newProfile.id,
+          role: newProfile.role,
+          nickname: newProfile.nickname,
+          displayNickname: newProfile.display_nickname,
+          playerId: newProfile.player_id,
+        });
+
+        return null;
+      }
+
+      // Controlla che il ruolo dell'utente corrisponda al ruolo richiesto
+      if (profile.role !== role) {
+        await supabase.auth.signOut();
+        return `Ruolo errato. Questo account è registrato come ${profile.role === 'mister' ? 'Mister' : 'Giocatore'}`;
+      }
+
+      setUser({
+        id: profile.id,
+        role: profile.role,
+        nickname: profile.nickname,
+        displayNickname: profile.display_nickname,
+        playerId: profile.player_id,
+      });
+
       return null;
-    } catch {
-      return 'Errore durante il login';
-    } finally {
-      setLoading(false);
+    } catch (e) {
+      console.error('[AuthContext] Login exception:', e);
+      return 'Errore di rete';
     }
   };
 
-  // Funzione di registrazione
-  const register: AuthCtx['register'] = async (nickname, password, role) => {
-    setLoading(true);
+  const register = async (nickname: string, password: string, role: AppRole): Promise<string | null> => {
     try {
-      // Controlla se il nickname è già in uso
-      const existing = await usersDB.findByNickname(nickname);
-      if (existing) return 'Nickname già in uso';
+      const cleanNickname = nickname.trim().toLowerCase();
 
-      // Hasha la password e crea l'utente
-      const hash = await hashPassword(password);
-      const id = await usersDB.create({ role, nickname, password_hash: hash, player_id: null });
-      if (!id) return 'Registrazione fallita';
+      const { data: existing } = await supabase
+        .from('profiles')
+        .select('nickname')
+        .eq('nickname', cleanNickname)
+        .single();
 
-      // Crea l'oggetto utente e salva la sessione
-      const next: AppUser = { id, role, nickname, playerId: null };
-      setUser(next);
-      await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(next));
+      if (existing) {
+        return 'Nickname già in uso';
+      }
+
+      const email = `${cleanNickname}@golnote.local`;
+
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            nickname: cleanNickname,
+            role,
+          },
+        },
+      });
+
+      if (signUpError) {
+        console.error('[AuthContext] SignUp error:', signUpError);
+        if (signUpError.message.includes('already registered')) {
+          return 'Utente già registrato';
+        }
+        return 'Errore durante la registrazione';
+      }
+
+      if (!signUpData.user) {
+        return 'Errore durante la registrazione';
+      }
+
+      const userId = signUpData.user.id;
+
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          id: userId,
+          role,
+          nickname: cleanNickname,
+          display_nickname: nickname,
+        });
+
+      if (profileError) {
+        console.error('[AuthContext] Profile creation error:', profileError);
+        return 'Errore durante la creazione del profilo';
+      }
+
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (signInError || !signInData.user) {
+        console.error('[AuthContext] Post-registration sign-in failed:', signInError);
+        return 'Registrazione completata. Effettua il login.';
+      }
+
+      setUser({
+        id: userId,
+        role,
+        nickname: cleanNickname,
+        displayNickname: nickname,
+        playerId: null,
+      });
+
       return null;
-    } catch {
-      return 'Errore durante la registrazione';
-    } finally {
-      setLoading(false);
+    } catch (e) {
+      console.error('[AuthContext] Register exception:', e);
+      return 'Errore di rete';
     }
   };
 
-  // Funzione di logout
   const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
     await AsyncStorage.removeItem(SESSION_KEY);
   };
 
-  // Funzione per aggiornare l'utente e salvare in AsyncStorage
-  const updateUser = async (u: AppUser | null) => {
-    setUser(u);
-    if (u) {
-      await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(u));
-    } else {
-      await AsyncStorage.removeItem(SESSION_KEY);
-    }
-  };
+  const isMister = useMemo(() => user?.role === 'mister', [user]);
+  const isPlayer = useMemo(() => user?.role === 'player', [user]);
 
-  // Proprietà calcolate per il ruolo
-  const isMister = user?.role === 'mister';
-  const isPlayer = user?.role === 'player';
-
-  // Valore del contesto memorizzato
   const value = useMemo(
-    () => ({ user, loading, login, register, logout, setUser: updateUser, isMister, isPlayer }),
+    () => ({
+      user,
+      loading,
+      login,
+      register,
+      logout,
+      setUser,
+      isMister,
+      isPlayer,
+    }),
     [user, loading, isMister, isPlayer]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
-// Hook per utilizzare il contesto di autenticazione
 export const useAuth = () => {
-  const v = useContext(Ctx);
-  if (!v) throw new Error('useAuth must be used within <AuthProvider>');
-  return v;
+  const ctx = useContext(Ctx);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
 };

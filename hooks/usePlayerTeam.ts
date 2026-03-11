@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Crypto from 'expo-crypto';
-import { teamsDB, playersDB, finesDB, Team, Player, Fine } from '@/database/database';
+import { teamsDB, playersDB, finesDB, Team, Player, Fine } from '@/database/database.supabase';
 
 /** --------- Ricerca squadre (con debounce, guard e race-prevention) --------- */
 export const useTeamSearch = () => {

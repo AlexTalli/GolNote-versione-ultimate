@@ -25,6 +25,14 @@ type AuthCtx = {
 const Ctx = createContext<AuthCtx | undefined>(undefined);
 const SESSION_KEY = '@session:v2';
 
+const buildAuthEmail = (nickname: string) => {
+  const encodedNickname = Array.from(nickname.trim().toLowerCase())
+    .map((char) => char.charCodeAt(0).toString(16).padStart(4, '0'))
+    .join('');
+
+  return `user-${encodedNickname}@golnote.app`;
+};
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -83,7 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (nickname: string, password: string, role: AppRole): Promise<string | null> => {
     try {
       const cleanNickname = nickname.trim().toLowerCase();
-      const email = `${cleanNickname}@golnote.local`;
+      const email = buildAuthEmail(cleanNickname);
 
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -185,7 +193,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return 'Nickname già in uso';
       }
 
-      const email = `${cleanNickname}@golnote.local`;
+      const email = buildAuthEmail(cleanNickname);
 
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,

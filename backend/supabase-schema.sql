@@ -13,9 +13,13 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   role text not null check (role in ('mister', 'player')),
   nickname text not null unique,
+  display_nickname text,
   player_id bigint,
   created_at timestamptz not null default now()
 );
+
+alter table public.profiles
+  add column if not exists display_nickname text;
 
 -- -------------------------
 -- TEAMS
@@ -117,6 +121,8 @@ create or replace function public.current_player_id()
 returns bigint
 language sql
 stable
+security definer
+set search_path = public, auth
 as $$
   select p.player_id
   from public.profiles p
@@ -127,6 +133,8 @@ create or replace function public.current_player_team_id()
 returns bigint
 language sql
 stable
+security definer
+set search_path = public, auth
 as $$
   select pl.team_id
   from public.players pl
@@ -137,6 +145,8 @@ create or replace function public.is_team_owner(team bigint)
 returns boolean
 language sql
 stable
+security definer
+set search_path = public, auth
 as $$
   select exists (
     select 1

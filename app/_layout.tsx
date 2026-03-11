@@ -2,9 +2,8 @@ import * as Notifications from 'expo-notifications';
 import 'react-native-reanimated';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useDatabase } from '@/hooks/useDatabase';
 import { RoleProvider } from '@/contexts/RoleContext';
-import { AuthProvider } from '@/contexts/AuthContext';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { View, ActivityIndicator } from 'react-native';
 import { useEffect } from 'react';
 
@@ -19,10 +18,30 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// Layout radice dell'app - gestisce bootstrap e providers globali
-export default function RootLayout() {
-  const { isInitialized } = useDatabase(); // Stato inizializzazione DB
+// Contenuto app - attende che AuthContext risolva la sessione
+function AppContent() {
+  const { loading } = useAuth();
 
+  if (loading) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  return (
+    <>
+      <Stack screenOptions={{ headerShown: false, gestureEnabled: false }}>
+        <Stack.Screen name="+not-found" />
+      </Stack>
+      <StatusBar style="auto" />
+    </>
+  );
+}
+
+// Layout radice dell'app - gestisce providers globali
+export default function RootLayout() {
   // Listener per debug notifiche
   useEffect(() => {
     const subscription = Notifications.addNotificationReceivedListener(notification => {
@@ -39,23 +58,10 @@ export default function RootLayout() {
     };
   }, []);
 
-  // Mostra loading fino a DB pronto
-  if (!isInitialized) {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
-
-  // Una volta DB pronto, fornisci contexts e navigazione
   return (
     <AuthProvider>
       <RoleProvider>
-        <Stack screenOptions={{ headerShown: false, gestureEnabled: false }}>
-          <Stack.Screen name="+not-found" />
-        </Stack>
-        <StatusBar style="auto" />
+        <AppContent />
       </RoleProvider>
     </AuthProvider>
   );

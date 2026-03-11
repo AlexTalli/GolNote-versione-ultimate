@@ -2,10 +2,24 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { Users, UserCheck } from 'lucide-react-native';
 import { useRole } from '@/contexts/RoleContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useEffect } from 'react';
 
 // Schermata iniziale: selezione ruolo (mister o player)
 export default function RoleSelection() {
   const { setRole } = useRole();
+  const { user, loading } = useAuth();
+
+  // Se l'utente ha già una sessione attiva, reindirizza direttamente
+  useEffect(() => {
+    if (!loading && user) {
+      if (user.role === 'mister') {
+        router.replace('/(mister)/(tabs)');
+      } else {
+        router.replace('/(player)/join-team');
+      }
+    }
+  }, [user, loading]);
 
   // Gestisce selezione ruolo e navigazione
   const selectRole = (role: 'mister' | 'player') => {

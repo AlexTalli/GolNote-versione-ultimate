@@ -63,7 +63,8 @@ export const useTeamSearch = () => {
 export const useCheckTeamPassword = () => {
   const verify = useCallback(async (teamId: number, plainPassword: string, hasPassword: boolean) => {
     if (!hasPassword) return true;
-    const hash = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, plainPassword);
+    const normalized = plainPassword.trim();
+    const hash = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, normalized);
     return await teamsDB.checkPassword(teamId, hash);
   }, []);
   return { verify };

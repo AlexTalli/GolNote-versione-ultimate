@@ -13,7 +13,7 @@ import { ArrowLeft, ChevronRight } from 'lucide-react-native';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
 import type { DateData } from 'react-native-calendars';
 
-import { useDatabase, useTeamAttendancePublic } from '@/hooks/useDatabase';
+import { useDatabase, useTeamAttendancePublic, useMonthAttendanceStatus } from '@/hooks/useDatabase';
 import type { AttendanceStatus } from '@/database/database.supabase';
 
 LocaleConfig.locales.it = {
@@ -80,6 +80,8 @@ export default function PlayerAttendanceCalendarScreen() {
 
   const teamId = useMemo(() => Number(teamIdParam ?? -1), [teamIdParam]);
   const [selectedDate, setSelectedDate] = useState(() => toYmd(new Date()));
+  const [displayYear, setDisplayYear] = useState(() => new Date().getFullYear());
+  const [displayMonth, setDisplayMonth] = useState(() => new Date().getMonth() + 1);
   const [refreshing, setRefreshing] = useState(false);
   const [sortBy, setSortBy] = useState<'position' | 'name' | 'surname'>('position');
 
@@ -89,11 +91,25 @@ export default function PlayerAttendanceCalendarScreen() {
     enabled,
   });
 
+  // Carica lo stato del calendario per il mese
+  const { markedDates: monthMarkedDates, refreshMonthStatus } = useMonthAttendanceStatus(
+    teamId,
+    displayYear,
+    displayMonth,
+    { enabled }
+  );
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await refreshAttendance();
+    await refreshMonthStatus();
     setRefreshing(false);
-  }, [refreshAttendance]);
+  }, [refreshAttendance, refreshMonthStatus]);
+
+  const handleMonthChange = useCallback((month: { year: number; month: number }) => {
+    setDisplayYear(month.year);
+    setDisplayMonth(month.month);
+  }, []);
 
   const POSITION_ORDER: Record<string, number> = {
     portiere: 0,
@@ -130,6 +146,62 @@ export default function PlayerAttendanceCalendarScreen() {
     });
   }, [rows, sortBy, getSurnameKey]);
 
+  // Costruisci markedDates combinando la data selezionata e lo stato del calendario
+  const calendarMarkedDates = useMemo(() => {
+    const marked: Record<
+      string,
+      {
+        customStyles?: {
+          container?: Record<string, unknown>;
+          text?: Record<string, unknown>;
+        };
+      }
+    > = {
+      [selectedDate]: {
+        customStyles: {
+          container: {
+            backgroundColor: '#2563eb',
+            borderRadius: 16,
+          },
+          text: {
+            color: '#ffffff',
+            fontWeight: '700',
+          },
+        },
+      },
+    };
+
+    // Aggiungi i marker per le date con presenze
+    Object.entries(monthMarkedDates).forEach(([date, status]) => {
+      if (!marked[date]) {
+        marked[date] = {};
+      }
+      // Colore per presenze complete: blu scuro
+      // Colore per presenze parziali: blu chiaro
+      const borderColor = status.isComplete
+        ? '#2563eb' // Blu scuro (complete)
+        : '#93c5fd'; // Blu chiaro (partial)
+
+      const isSelected = date === selectedDate;
+      marked[date] = {
+        customStyles: {
+          container: {
+            borderWidth: 2,
+            borderColor,
+            borderRadius: 16,
+            backgroundColor: isSelected ? '#2563eb' : 'transparent',
+          },
+          text: {
+            color: isSelected ? '#ffffff' : '#1f2937',
+            fontWeight: '700',
+          },
+        },
+      };
+    });
+
+    return marked;
+  }, [selectedDate, monthMarkedDates]);
+
   if (!(teamId > 0)) {
     return (
       <SafeAreaView style={[styles.container, styles.centered]}>
@@ -156,13 +228,10 @@ export default function PlayerAttendanceCalendarScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         <Calendar
+          markingType="custom"
           onDayPress={(day: DateData) => setSelectedDate(day.dateString)}
-          markedDates={{
-            [selectedDate]: {
-              selected: true,
-              selectedColor: '#2563eb',
-            },
-          }}
+          onMonthChange={handleMonthChange}
+          markedDates={calendarMarkedDates}
           theme={{
             todayTextColor: '#2563eb',
             arrowColor: '#2563eb',
@@ -175,6 +244,17 @@ export default function PlayerAttendanceCalendarScreen() {
         />
 
         <Text style={styles.selectedDateLabel}>Data selezionata: {toItalianDate(selectedDate)}</Text>
+
+        <View style={styles.legendRow}>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#2563eb' }]} />
+            <Text style={styles.legendText}>Data completa (a tutti i giocatori è segnata la presenza)</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#93c5fd' }]} />
+            <Text style={styles.legendText}>Data parziale (mancano presenze di alcuni giocatori)</Text>
+          </View>
+        </View>
 
         <View style={styles.legendRow}>
           {STATUS_OPTIONS.map((s) => (

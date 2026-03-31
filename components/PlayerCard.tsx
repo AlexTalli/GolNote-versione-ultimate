@@ -15,15 +15,24 @@ type PlayerCardProps = {
     total_unpaid?: number; // Totale non pagato (opzionale)
   };
   index: number; // Posizione nella lista (1-based)
-  onPress: () => void; // Funzione chiamata quando si preme la card
+  onPress?: () => void; // Funzione chiamata quando si preme la card
   onDelete?: () => void; // prop (opzionale) per eliminare il giocatore
   onEdit?: () => void; // prop (opzionale) per modificare il giocatore
   isCurrentPlayer?: boolean; // Se è il giocatore loggato (per evidenziarlo)
+  showFinesInfo?: boolean; // Mostra sezione multe (badge/importo/freccia)
 };
 
 /* ========== COMPONENTE ========== */
 
-export function PlayerCard({ player, index, onPress, onDelete, onEdit, isCurrentPlayer }: PlayerCardProps) {
+export function PlayerCard({
+  player,
+  index,
+  onPress,
+  onDelete,
+  onEdit,
+  isCurrentPlayer,
+  showFinesInfo = true,
+}: PlayerCardProps) {
   // Conversione sicura dei valori delle multe (default a 0 se undefined)
   const active = Number(player.active_fines ?? 0);
   const unpaid = Number(player.total_unpaid ?? 0);
@@ -36,7 +45,12 @@ export function PlayerCard({ player, index, onPress, onDelete, onEdit, isCurrent
   return (
     <View style={[s.card, isCurrentPlayer && s.cardCurrent]}>
       {/* Parte sinistra tappabile: mostra numero, nome e ruolo, apre dettaglio giocatore */}
-      <TouchableOpacity style={s.left} onPress={onPress} activeOpacity={0.9}>
+      <TouchableOpacity
+        style={s.left}
+        onPress={onPress}
+        disabled={!onPress}
+        activeOpacity={onPress ? 0.9 : 1}
+      >
         <View style={s.numberBadge}>
           <Text style={s.numberText}>#{index}</Text>
         </View>
@@ -46,17 +60,24 @@ export function PlayerCard({ player, index, onPress, onDelete, onEdit, isCurrent
         </View>
       </TouchableOpacity>
 
-      {/* Parte destra tappabile: mostra badge multe attive, totale non pagato e freccia, apre dettaglio */}
-      <TouchableOpacity style={s.right} onPress={onPress} activeOpacity={0.9}>
-        {active > 0 && (
-          <View style={s.badge}>
-            <AlertCircle size={12} color="#ef4444" />
-            <Text style={s.badgeText}>{active}</Text>
-          </View>
-        )}
-        <Text style={s.amount}>{unpaid.toFixed(2)}€</Text>
-        <ChevronRight size={18} color="#9ca3af" />
-      </TouchableOpacity>
+      {/* Parte destra tappabile: mostra badge multe attive, totale non pagato e freccia */}
+      {showFinesInfo && (
+        <TouchableOpacity
+          style={s.right}
+          onPress={onPress}
+          disabled={!onPress}
+          activeOpacity={onPress ? 0.9 : 1}
+        >
+          {active > 0 && (
+            <View style={s.badge}>
+              <AlertCircle size={12} color="#ef4444" />
+              <Text style={s.badgeText}>{active}</Text>
+            </View>
+          )}
+          <Text style={s.amount}>{unpaid.toFixed(2)}€</Text>
+          <ChevronRight size={18} color="#9ca3af" />
+        </TouchableOpacity>
+      )}
 
       {/* Pulsante matita per modificare il giocatore (solo se onEdit è fornito) */}
       {onEdit && (

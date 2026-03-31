@@ -122,40 +122,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single();
 
       if (profileError || !profile) {
-        console.error('[AuthContext] Profile not found, creating recovery profile');
-        const { error: upsertError } = await supabase
-          .from('profiles')
-          .upsert({
-            id: userId,
-            role,
-            nickname: cleanNickname,
-            display_nickname: nickname,
-          }, { onConflict: 'id' });
-
-        if (upsertError) {
-          console.error('[AuthContext] Recovery profile creation failed:', upsertError);
-          return 'Errore durante il recupero del profilo';
-        }
-
-        const { data: newProfile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', userId)
-          .single();
-
-        if (!newProfile) {
-          return 'Errore durante il login';
-        }
-
-        setUser({
-          id: newProfile.id,
-          role: newProfile.role,
-          nickname: newProfile.nickname,
-          displayNickname: newProfile.display_nickname,
-          playerId: newProfile.player_id,
-        });
-
-        return null;
+        console.error('[AuthContext] Profile not found on login:', profileError);
+        await supabase.auth.signOut();
+        return 'Profilo non trovato. Se hai eliminato l’account, registrati di nuovo.';
       }
 
       // Controlla che il ruolo dell'utente corrisponda al ruolo richiesto

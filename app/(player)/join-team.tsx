@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   Modal,
   Alert,
+  Image,
 } from 'react-native';
 import { Lock, Search, Eye, EyeOff, Users, Trash2 } from 'lucide-react-native';
 import { useTeamSearch, useCheckTeamPassword } from '@/hooks/usePlayerTeam';
@@ -21,8 +22,8 @@ import { playersDB, usersDB, type Player } from '@/database/database.supabase';
 // Schermata per giocatori: cerca e unisciti a una squadra
 export default function JoinTeamScreen() {
   const router = useRouter();
-  const { user, setUser, logout } = useAuth();
-  const { setPlayerIdentity } = useRole();
+  const { user, setUser } = useAuth();
+  const { setPlayerIdentity, setRole } = useRole();
   const { query, setQuery, results, loading } = useTeamSearch(); // Hook per ricerca squadre
   const { verify } = useCheckTeamPassword(); // Hook per verifica password
 
@@ -166,9 +167,14 @@ export default function JoinTeamScreen() {
           onPress: async () => {
             if (!user) return;
             try {
-              await usersDB.deleteAccount(user.id);
-              await logout();
+              const ok = await usersDB.deleteAccount(user.id);
+              if (!ok) {
+                throw new Error('Delete account failed');
+              }
+              setUser(null);
+              setRole(null);
               setPlayerIdentity({ playerId: null });
+              router.dismissAll();
               router.replace('/');
             } catch (error) {
               console.error('Error deleting account:', error);
@@ -224,12 +230,26 @@ export default function JoinTeamScreen() {
           contentContainerStyle={{ paddingVertical: 12 }}
           renderItem={({ item }) => (
             <TouchableOpacity style={s.teamRow} onPress={() => openPwd(item)}>
-              {/* Punto colore squadra */}
-              <View style={[s.colorDot, { backgroundColor: item.color }]} />
+              {item.logo_uri ? (
+                <Image
+                  source={{ uri: item.logo_uri }}
+                  style={s.teamLogo}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={[s.colorDot, { backgroundColor: item.color }]} />
+              )}
               <View style={{ flex: 1 }}>
                 <Text style={s.teamName} numberOfLines={1}>
                   {item.name}
                 </Text>
+
+                {(item.season_year || item.category) && (
+                  <Text style={s.teamMeta} numberOfLines={1}>
+                    {[item.season_year, item.category].filter(Boolean).join(' • ')}
+                  </Text>
+                )}
+
                 {/* Descrizione se presente */}
                 {!!item.description && (
                   <Text style={s.teamDesc} numberOfLines={1}>
@@ -448,8 +468,19 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e5e7eb',
   },
-  colorDot: { width: 16, height: 16, borderRadius: 8 },
+  colorDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+  teamLogo: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#f3f4f6',
+  },
   teamName: { fontSize: 16, fontWeight: '700', color: '#111827' },
+  teamMeta: { fontSize: 12, color: '#374151', fontWeight: '600' },
   teamDesc: { fontSize: 12, color: '#6b7280' },
 
   // Modal overlay

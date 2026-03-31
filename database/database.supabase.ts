@@ -19,7 +19,10 @@ export type Team = {
   id: number;
   name: string;
   description?: string | null;
+  season_year?: string | null;
+  category?: string | null;
   color: string;
+  logo_uri?: string | null;
   owner_user_id: string; // UUID del profilo
   created_at: string;
   password_hash?: string | null;
@@ -78,8 +81,7 @@ export type AttendanceStatus =
   | 'absent_justified'
   | 'absent_unjustified'
   | 'sick'
-  | 'riposo'
-  | 'malato';
+  | 'riposo';
 
 export type TeamAttendanceRow = {
   player_id: number;
@@ -175,14 +177,10 @@ export const usersDB = {
   },
 
   async deleteUser(userId: string): Promise<boolean> {
-    // Elimina il profilo (cascade eliminerà teams e dati correlati)
-    const { error } = await supabase
-      .from('profiles')
-      .delete()
-      .eq('id', userId);
-    
-    if (error) {
-      console.error('[usersDB] deleteUser error:', error);
+    const { data, error } = await supabase.rpc('delete_my_account');
+
+    if (error || data !== true) {
+      console.error('[usersDB] deleteUser error:', error ?? 'RPC returned false');
       return false;
     }
 
@@ -307,12 +305,32 @@ export const teamsDB = {
     return (data as any).password_hash === hash;
   },
 
-  async teamNameExists(name: string): Promise<boolean> {
-    const { data, error } = await supabase
+  async teamNameExists(
+    ownerId: string,
+    name: string,
+    seasonYear?: string,
+    category?: string,
+    excludeTeamId?: number
+  ): Promise<boolean> {
+    let query = supabase
       .from('teams')
       .select('id')
-      .ilike('name', name)
-      .limit(1);
+      .eq('owner_user_id', ownerId)
+      .ilike('name', name.trim());
+
+    if (seasonYear?.trim()) {
+      query = query.eq('season_year', seasonYear.trim());
+    }
+
+    if (category?.trim()) {
+      query = query.eq('category', category.trim());
+    }
+
+    if (typeof excludeTeamId === 'number') {
+      query = query.neq('id', excludeTeamId);
+    }
+
+    const { data, error } = await query.limit(1);
 
     if (error) {
       console.error('[teamsDB] teamNameExists error:', error);
@@ -323,10 +341,15 @@ export const teamsDB = {
   },
 
   async create(team: Omit<Team, 'id' | 'created_at'>): Promise<number | null> {
-    // Controlla se esiste già una squadra con lo stesso nome
-    const nameExists = await this.teamNameExists(team.name);
+    // Controlla duplicati per mister + società + stagione + categoria
+    const nameExists = await this.teamNameExists(
+      team.owner_user_id,
+      team.name,
+      team.season_year ?? undefined,
+      team.category ?? undefined
+    );
     if (nameExists) {
-      // Nome già esistente - validazione attesa, non un errore di sistema
+      // Identità squadra già esistente - validazione attesa, non errore di sistema
       return null;
     }
 
@@ -444,7 +467,21 @@ export const playersDB = {
   },
 
   async getByTeamPublic(teamId: number): Promise<Player[]> {
-    return this.getByTeam(teamId);
+    const { data, error } = await supabase.rpc('get_joinable_team_players', {
+      p_team_id: teamId,
+    });
+
+    if (error) {
+      console.error('[playersDB] getByTeamPublic error:', error);
+      return [];
+    }
+
+    return (data || []).map((player: any) => ({
+      ...player,
+      active_fines: Number(player.active_fines ?? 0),
+      total_unpaid: Number(player.total_unpaid ?? 0),
+      is_taken: Number(player.is_taken ?? 0),
+    })) as Player[];
   },
 
   async getById(playerId: number): Promise<Player | null> {
@@ -455,10 +492,14 @@ export const playersDB = {
         team:teams(name, color)
       `)
       .eq('id', playerId)
-      .single();
+      .maybeSingle();
     
     if (error) {
       console.error('[playersDB] getById error:', error);
+      return null;
+    }
+
+    if (!data) {
       return null;
     }
     
@@ -801,8 +842,6 @@ export const trainingDB = {
   }): Promise<boolean> {
     const { team_id, session_date, player_id, status, created_by } = params;
 
-    const dbStatus: AttendanceStatus = status === 'sick' ? 'malato' : status;
-
     const { data: existingSessions, error: existingSessionError } = await supabase
       .from('training_sessions')
       .select('id')
@@ -851,7 +890,7 @@ export const trainingDB = {
         {
           session_id: sessionId,
           player_id,
-          status: dbStatus,
+          status,
         },
         { onConflict: 'session_id,player_id' }
       );
@@ -881,7 +920,7 @@ export const trainingDB = {
     return (data || [])
       .map((r: any) => ({
         date: r.session?.session_date || '',
-        status: r.status === 'malato' ? 'sick' : r.status,
+        status: r.status,
       }))
       .sort((a, b) => b.date.localeCompare(a.date));
   },
@@ -905,7 +944,7 @@ export const trainingDB = {
       else if (h.status === 'injured') summary.injured++;
       else if (h.status === 'absent_justified') summary.absent_justified++;
       else if (h.status === 'absent_unjustified') summary.absent_unjustified++;
-      else if (h.status === 'sick' || h.status === 'malato') summary.sick++;
+      else if (h.status === 'sick') summary.sick++;
     });
     
     return summary;
@@ -924,7 +963,7 @@ export const trainingDB = {
         attendances.push({
           player_id: a.player_id,
           date: s.session_date,
-          status: a.status === 'malato' ? 'sick' : a.status,
+          status: a.status,
         });
       }
     }
@@ -981,7 +1020,7 @@ export const trainingDB = {
       player_surname: p.surname,
       player_number: p.number,
       player_position: p.position,
-      attendance_status: (attendanceMap.get(p.id) === 'malato' ? 'sick' : attendanceMap.get(p.id)) || null,
+      attendance_status: attendanceMap.get(p.id) || null,
     }));
   },
 };
@@ -1000,6 +1039,9 @@ export const statsDB = {
         total_teams: 0,
         total_players: 0,
         active_fines: 0,
+        total_amount: 0,
+        paid_amount: 0,
+        unpaid_amount: 0,
         total_unpaid: 0,
       };
     }
@@ -1010,19 +1052,40 @@ export const statsDB = {
       .in('team_id', teamIds);
     
     const playerIds = (players || []).map((p) => p.id);
+
+    if (playerIds.length === 0) {
+      return {
+        total_teams: teams.length,
+        total_players: 0,
+        active_fines: 0,
+        total_amount: 0,
+        paid_amount: 0,
+        unpaid_amount: 0,
+        total_unpaid: 0,
+      };
+    }
     
     const { data: fines } = await supabase
       .from('fines')
       .select('amount, is_paid')
       .in('player_id', playerIds);
     
+    const allFines = fines || [];
     const unpaidFines = (fines || []).filter((f) => !f.is_paid);
+    const paidFines = (fines || []).filter((f) => !!f.is_paid);
+
+    const totalAmount = allFines.reduce((sum, f) => sum + Number(f.amount || 0), 0);
+    const paidAmount = paidFines.reduce((sum, f) => sum + Number(f.amount || 0), 0);
+    const unpaidAmount = unpaidFines.reduce((sum, f) => sum + Number(f.amount || 0), 0);
     
     return {
       total_teams: teams.length,
       total_players: players?.length || 0,
       active_fines: unpaidFines.length,
-      total_unpaid: unpaidFines.reduce((sum, f) => sum + f.amount, 0),
+      total_amount: totalAmount,
+      paid_amount: paidAmount,
+      unpaid_amount: unpaidAmount,
+      total_unpaid: unpaidAmount,
     };
   },
 };
@@ -1042,9 +1105,36 @@ export const exportAllDataForMisterToCsv = async (ownerId: string): Promise<stri
 };
 
 export const clearAllDataForMister = async (ownerUserId: string): Promise<void> => {
-  console.warn('[clearAllDataForMister] Not implemented for Supabase yet');
+  const teams = await teamsDB.getAllByOwner(ownerUserId);
+  const teamIds = teams.map((t) => t.id).filter((id) => Number.isFinite(id) && id > 0);
+
+  if (teamIds.length === 0) {
+    return;
+  }
+
+  // 1) Elimina i giocatori delle squadre del mister (cascade elimina le multe del player)
+  const { error: playersError } = await supabase
+    .from('players')
+    .delete()
+    .in('team_id', teamIds);
+
+  if (playersError) {
+    console.error('[clearAllDataForMister] players delete error:', playersError);
+    throw playersError;
+  }
+
+  // 2) Elimina le squadre del mister (cascade elimina sessioni allenamento/attendance)
+  const { error: teamsError } = await supabase
+    .from('teams')
+    .delete()
+    .eq('owner_user_id', ownerUserId);
+
+  if (teamsError) {
+    console.error('[clearAllDataForMister] teams delete error:', teamsError);
+    throw teamsError;
+  }
 };
 
-export const deleteMisterAccount = async (ownerId: string): Promise<void> => {
-  await usersDB.deleteUser(ownerId);
+export const deleteMisterAccount = async (ownerId: string): Promise<boolean> => {
+  return await usersDB.deleteUser(ownerId);
 };

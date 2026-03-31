@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { ChevronRight, Users, CircleAlert as AlertCircle, Trash2, Edit } from 'lucide-react-native';
 
 /* ========== INTERFACCE ========== */
@@ -8,9 +8,12 @@ interface Team {
   id: number;
   name: string;
   description: string;
+  season_year?: string | null;
+  category?: string | null;
   players_count: number; // Numero di giocatori nella squadra
   active_fines: number; // Numero di multe attive
   color: string; // Colore rappresentativo della squadra
+  logo_uri?: string | null; // Logo opzionale della squadra
 }
 
 // Props del componente TeamCard
@@ -28,13 +31,21 @@ export function TeamCard({ team, onPress, onEdit, onDelete }: TeamCardProps) {
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.9}>
-      {/* Barra colorata a sinistra per identificare la squadra */}
-      <View style={[styles.colorBar, { backgroundColor: team.color }]} />
+      {/* Sezione logo/colore a sinistra (grande porzione) */}
+      <View style={[styles.logoSection, team.logo_uri ? {} : { backgroundColor: team.color }]}>
+        {team.logo_uri && (
+          <Image source={{ uri: team.logo_uri }} style={styles.logoImage} resizeMode="cover" />
+        )}
+      </View>
 
       <View style={styles.content}>
         {/* Header con nome squadra, pulsanti edit/delete e freccia */}
         <View style={styles.header}>
-          <Text style={styles.teamName}>{team.name}</Text>
+          <View style={styles.nameWrap}>
+            <Text style={styles.teamName} numberOfLines={2}>
+              {team.name}
+            </Text>
+          </View>
 
           <View style={styles.headerButtons}>
             {/* Pulsante matita per modificare la squadra */}
@@ -74,6 +85,12 @@ export function TeamCard({ team, onPress, onEdit, onDelete }: TeamCardProps) {
           {team.description}
         </Text>
 
+        {(team.season_year || team.category) && (
+          <Text style={styles.metaInfo} numberOfLines={2}>
+            {[team.season_year, team.category].filter(Boolean).join(' • ')}
+          </Text>
+        )}
+
         {/* Statistiche: numero giocatori e multe attive */}
         <View style={styles.stats}>
           <View style={styles.stat}>
@@ -112,23 +129,35 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 
-  // Barra colorata a sinistra per il colore della squadra
-  colorBar: {
-    width: 6,
+  // Sezione logo/colore grande a sinistra
+  logoSection: {
+    width: 120,
+    height: 120,
+    backgroundColor: '#e5e7eb',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoImage: {
+    width: '100%',
+    height: '100%',
   },
 
   // Contenuto principale della card
   content: {
     flex: 1,
-    padding: 16,
+    padding: 14,
   },
 
   // Header con nome e pulsanti
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 8,
+  },
+  nameWrap: {
+    flex: 1,
+    marginRight: 10,
   },
   headerButtons: {
     flexDirection: 'row',
@@ -144,16 +173,23 @@ const styles = StyleSheet.create({
 
   // Testo del nome della squadra
   teamName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     color: '#1f2937',
+    lineHeight: 20,
   },
 
   // Testo della descrizione
   description: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#6b7280',
-    marginBottom: 12,
+    marginBottom: 6,
+  },
+  metaInfo: {
+    fontSize: 12,
+    color: '#374151',
+    fontWeight: '600',
+    marginBottom: 10,
   },
 
   // Contenitore delle statistiche

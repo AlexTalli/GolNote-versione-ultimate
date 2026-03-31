@@ -189,6 +189,7 @@ export default function MisterSettings() {
             try {
               setClearing(true);
               await clearAllDataForMister(user.id);
+              await refreshTeams();
               Alert.alert('Completato', 'Tutti i dati sono stati cancellati.');
             } catch (e) {
               console.error('Errore cancellazione dati:', e);
@@ -214,7 +215,7 @@ export default function MisterSettings() {
 
     Alert.alert(
       'Elimina account',
-      'Questa azione eliminerà il tuo account MISTER e TUTTE le tue squadre, giocatori e multe. Non potrai più recuperare nulla.\n\nVuoi davvero continuare?',
+      'Questa azione eliminerà il tuo account MISTER e TUTTI i dati associati. Non potrai più recuperare nulla.\n\nVuoi davvero continuare?',
       [
         { text: 'Annulla', style: 'cancel' },
         {
@@ -224,16 +225,14 @@ export default function MisterSettings() {
             try {
               setDeletingAccount(true);
 
-              await deleteMisterAccount(user.id);
-
-              try {
-                await logout?.();
-              } catch (e) {
-                console.log('Errore in logout dopo delete account:', e);
+              const ok = await deleteMisterAccount(user.id);
+              if (!ok) {
+                throw new Error('Delete account failed');
               }
+              setUser(null);
               setRole(null);
               setPlayerIdentity({ playerId: null });
-
+              router.dismissAll();
               router.replace('/');
             } catch (e) {
               console.error('Errore eliminazione account:', e);
@@ -252,12 +251,7 @@ export default function MisterSettings() {
 
   /* ============= CAMBIA RUOLO ============= */
   const handleChangeRole = async () => {
-    try {
-      await logout?.();
-    } catch (e) {
-      console.log('Errore in logout:', e);
-    }
-
+    setUser(null);
     setRole(null);
     setPlayerIdentity({ playerId: null });
     router.dismissAll();
@@ -435,20 +429,17 @@ export default function MisterSettings() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.option, styles.dangerOption]}
+            style={[styles.optionWrapped, styles.dangerOption]}
             onPress={handleDeleteAccount}
             disabled={deletingAccount}
           >
             <Trash2 size={20} color="#ef4444" />
-            <View style={styles.optionContent}>
+            <View style={styles.optionContentWrapped}>
               <Text style={[styles.optionTitle, styles.dangerText]}>
-                {deletingAccount
-                  ? 'Eliminazione account…'
-                  : 'Elimina Account'}
+                {deletingAccount ? 'Eliminazione account…' : 'Elimina Account'}
               </Text>
               <Text style={styles.optionDescription}>
-                Cancella definitivamente l’account Mister e tutti i dati
-                associati
+                Cancella definitivamente l'account Mister
               </Text>
             </View>
             {deletingAccount && (
@@ -627,6 +618,20 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  optionContentWrapped: {
+    marginLeft: 12,
+    flex: 1,
+    flexWrap: 'wrap',
+  },
+
+  optionWrapped: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f3f4f6',
+  },
+
   // Titolo dell'opzione
   optionTitle: {
     fontSize: 16,
@@ -646,9 +651,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#fef2f2',
   },
 
+  dangerOptionStrong: {
+    borderTopColor: '#fecaca',
+    borderTopWidth: 1,
+  },
+
   // Testo per opzioni pericolose (rosso)
   dangerText: {
     color: '#ef4444',
+  },
+
+  dangerTextStrong: {
+    color: '#b91c1c',
+    fontWeight: '700',
+  },
+
+  dangerDescription: {
+    color: '#991b1b',
   },
 
   // Overlay scuro per il modal

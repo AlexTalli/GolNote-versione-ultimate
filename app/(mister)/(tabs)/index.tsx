@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { ScrollView, Text, View, StyleSheet, RefreshControl } from 'react-native';
+import { router } from 'expo-router';
 import { DashboardCard } from '@/components/DashboardCard';
 import { useDashboardStats } from '@/hooks/useDatabase';
 import { useAuth } from '@/contexts/AuthContext';  
@@ -77,36 +78,62 @@ export default function MisterDashboard() {
           value={String(totalTeams)}
           icon="shield"
           color="#8b5cf6"
+          onPress={() => router.push('/(mister)/dashboard/teams')}
         />
         <DashboardCard
           title="Giocatori"
           value={String(totalPlayers)}
           icon="users"
           color="#3b82f6"
+          onPress={() => router.push('/(mister)/dashboard/players')}
         />
         <DashboardCard
           title="Multe Attive"
           value={String(activeFines)}
           icon="alert-circle"
           color="#ef4444"
+          onPress={() =>
+            router.push({
+              pathname: '/(mister)/dashboard/fines',
+              params: { metric: 'active' },
+            })
+          }
         />
         <DashboardCard
           title="Totale Multe"
           value={fmtEuro(totalAmount)}
           icon="euro"
           color="#f59e0b"
+          onPress={() =>
+            router.push({
+              pathname: '/(mister)/dashboard/fines',
+              params: { metric: 'total' },
+            })
+          }
         />
         <DashboardCard
           title="Multe Pagate"
           value={fmtEuro(paidAmount)}
           icon="check-circle"
           color="#22c55e"
+          onPress={() =>
+            router.push({
+              pathname: '/(mister)/dashboard/fines',
+              params: { metric: 'paid' },
+            })
+          }
         />
         <DashboardCard
           title="Multe da Pagare"
           value={fmtEuro(unpaidAmount)}
           icon="alert-circle"
           color="#f97316"
+          onPress={() =>
+            router.push({
+              pathname: '/(mister)/dashboard/fines',
+              params: { metric: 'unpaid' },
+            })
+          }
         />
       </View>
     </ScrollView>

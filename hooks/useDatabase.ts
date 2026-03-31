@@ -43,7 +43,10 @@ export const useDatabase = () => {
 type TeamInput = {
   name: string;
   description: string;
+  season_year: string;
+  category: string;
   color: string;
+  logo_uri?: string;
   password?: string; 
 };
 
@@ -83,10 +86,12 @@ export const useTeams = (deps: { enabled?: boolean } = {}) => {
     async (teamData: TeamInput): Promise<boolean> => {
       if (!ownerUserId) return false;
 
-      const password_hash = teamData.password
+      const normalizedPassword = teamData.password?.trim() ?? '';
+
+      const password_hash = normalizedPassword
         ? await Crypto.digestStringAsync(
             Crypto.CryptoDigestAlgorithm.SHA256,
-            teamData.password
+            normalizedPassword
           )
         : null;
 
@@ -125,10 +130,12 @@ export const useTeams = (deps: { enabled?: boolean } = {}) => {
 
       // Se c'è una password, hashificare
       if (teamData.password !== undefined) {
-        if (teamData.password) {
+        const normalizedPassword = teamData.password.trim();
+
+        if (normalizedPassword) {
           updateData.password_hash = await Crypto.digestStringAsync(
             Crypto.CryptoDigestAlgorithm.SHA256,
-            teamData.password
+            normalizedPassword
           );
         } else {
           updateData.password_hash = null;
@@ -386,7 +393,16 @@ export const useTeamAttendance = (
         created_by: ownerUserId,
       });
 
-      if (ok) await loadAttendance();
+        if (ok) {
+          // Update ottimistico: aggiorna la UI localmente senza ricaricare tutto
+          setRows(prevRows =>
+            prevRows.map(row =>
+              row.player_id === playerId
+                ? { ...row, attendance_status: status }
+                : row
+            )
+          );
+        }
       return ok;
     },
     [enabled, ownerUserId, teamId, sessionDate, loadAttendance]
@@ -575,4 +591,82 @@ export const useMonthAttendanceExport = (teamId: number, year: number, month: nu
   }, [enabled, teamId, year, month]);
 
   return { loadMonthData };
+};
+
+export type MonthAttendanceStatus = {
+  hasAttendance: boolean;      // Almeno un giocatore ha una presenza
+  isComplete: boolean;          // Tutti i giocatori hanno una presenza marcata
+  markedCount: number;          // Numero di giocatori marcati
+  totalPlayers: number;         // Numero totale di giocatori
+};
+
+export const useMonthAttendanceStatus = (
+  teamId?: number,
+  year?: number,
+  month?: number,
+  deps: { enabled?: boolean } = {}
+) => {
+  const { isInitialized } = useDatabase();
+  const enabled =
+    (deps.enabled ?? true) &&
+    isInitialized &&
+    typeof teamId === 'number' &&
+    teamId > 0 &&
+    typeof year === 'number' &&
+    typeof month === 'number' &&
+    month >= 1 &&
+    month <= 12;
+
+  const [markedDates, setMarkedDates] = useState<
+    Record<string, MonthAttendanceStatus>
+  >({});
+  const [loading, setLoading] = useState(false);
+
+  const loadMonthStatus = useCallback(async () => {
+    if (!enabled || !teamId || typeof year !== 'number' || typeof month !== 'number') {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const data = await trainingDB.getMonthAttendance(teamId, year, month);
+      const { players, attendances } = data;
+
+      const totalPlayers = players.length;
+      const dateMap: Record<string, Set<number>> = {};
+
+      // Raggruppa gli stati per data
+      attendances.forEach((att: any) => {
+        if (!dateMap[att.date]) {
+          dateMap[att.date] = new Set();
+        }
+        dateMap[att.date].add(att.player_id);
+      });
+
+      // Calcola lo stato per ogni data
+      const result: Record<string, MonthAttendanceStatus> = {};
+      Object.entries(dateMap).forEach(([date, playerIds]) => {
+        result[date] = {
+          hasAttendance: playerIds.size > 0,
+          isComplete: playerIds.size === totalPlayers,
+          markedCount: playerIds.size,
+          totalPlayers,
+        };
+      });
+
+      setMarkedDates(result);
+    } catch (error) {
+      console.error('Error loading month attendance status:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [enabled, teamId, year, month]);
+
+  useEffect(() => {
+    if (enabled) loadMonthStatus();
+    else setLoading(false);
+  }, [enabled, loadMonthStatus]);
+
+  return { markedDates, loading, refreshMonthStatus: loadMonthStatus };
 };

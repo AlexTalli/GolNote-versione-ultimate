@@ -2,7 +2,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRole } from '@/contexts/RoleContext';
 import { useEffect, useRef, useState } from 'react';
-import { finesDB, playersDB } from '@/database/database.supabase';
+import { finesDB, playersDB, usersDB } from '@/database/database.supabase';
 import {
   scheduleFineAssignedNotification,
   scheduleFineDueNotification,
@@ -12,15 +12,20 @@ import {
 export default function PlayerLayout() {
   const router = useRouter();
   const segments = useSegments();
-  const { user } = useAuth();
+  const { user, setUser } = useAuth();
   const { setPlayerIdentity } = useRole();
   const [checked, setChecked] = useState(false);
   const hasBaselineFinesRef = useRef(false);
   const knownFineIdsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
+    if (!user?.playerId) {
+      setChecked(false);
+      return;
+    }
+
     // Se l'utente ha già un player_id associato, naviga direttamente alla squadra
-    if (user?.playerId && !checked) {
+    if (!checked) {
       setChecked(true);
       setPlayerIdentity({ playerId: user.playerId });
       
@@ -28,19 +33,30 @@ export default function PlayerLayout() {
       const inJoinTeam = (segments as unknown as string[]).includes('join-team');
       if (inJoinTeam) {
         // Carica il giocatore per ottenere il team_id
-        playersDB.getById(user.playerId).then((player) => {
+        playersDB.getById(user.playerId).then(async (player) => {
           if (player?.team_id) {
             router.replace({
               pathname: '/(player)/team/[teamId]',
               params: { teamId: String(player.team_id) },
             });
+            return;
           }
+
+          // Link stale (player eliminato/non trovato): pulizia collegamento
+          if (user?.id) {
+            await usersDB.unlinkPlayer(user.id);
+            setUser({
+              ...user,
+              playerId: null,
+            });
+          }
+          setPlayerIdentity({ playerId: null });
         }).catch(err => {
           console.error('Error loading player for redirect:', err);
         });
       }
     }
-  }, [user?.playerId, segments, checked]);
+  }, [user?.id, user?.playerId, segments, checked, router, setPlayerIdentity, setUser]);
 
   // Notifiche player (parziale locale):
   // - nuova multa: notifica immediata quando compare una nuova multa
@@ -105,6 +121,10 @@ export default function PlayerLayout() {
       <Stack.Screen name="join-team" options={{ gestureEnabled: false }} />
       {/* Dettagli team */}
       <Stack.Screen name="team/[teamId]" options={{ gestureEnabled: false }} />
+      {/* Rosa team */}
+      <Stack.Screen name="team/[teamId]/roster" options={{ gestureEnabled: false }} />
+      {/* Multe team */}
+      <Stack.Screen name="team/[teamId]/fines" options={{ gestureEnabled: false }} />
       {/* Calendario presenze (sola lettura) */}
       <Stack.Screen name="attendance/[teamId]" options={{ gestureEnabled: false }} />
       {/* Dettaglio attandanza giocatore */}

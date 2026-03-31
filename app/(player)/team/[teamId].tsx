@@ -5,8 +5,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
-  RefreshControl,
   TouchableOpacity,
   Alert,
 } from 'react-native';
@@ -15,40 +13,49 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 
 // Icona per il pulsante indietro
-import { ArrowLeft, CalendarDays, Trash2, UserX } from 'lucide-react-native';
+import {
+  ArrowLeft,
+  CalendarDays,
+  CircleDollarSign,
+  ChevronRight,
+  Trash2,
+  UserX,
+  Users,
+} from 'lucide-react-native';
 
 // Database per caricare i giocatori
-import { playersDB, Player, usersDB } from '@/database/database.supabase';
-
-// Componente per mostrare la card del giocatore
-import { PlayerCard } from '@/components/PlayerCard';
+import { playersDB, usersDB } from '@/database/database.supabase';
 
 // Auth per eliminare account
 import { useAuth } from '@/contexts/AuthContext';
+import { useRole } from '@/contexts/RoleContext';
 
 export default function PlayerTeamScreen() {
   /* ========== HOOKS E STATI ========== */
 
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, setUser } = useAuth();
+  const { setPlayerIdentity, setRole } = useRole();
 
   const { teamId: teamIdParam } = useLocalSearchParams<{ teamId?: string }>();
   const teamId = useMemo(() => Number(teamIdParam ?? -1), [teamIdParam]);
 
-  const [players, setPlayers] = useState<Player[]>([]);
+  const [teamName, setTeamName] = useState('Squadra');
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [sortBy, setSortBy] = useState<'surname' | 'position'>('surname');
 
   /* ========== FUNZIONI DI CARICAMENTO ========== */
 
-  const load = useCallback(async () => {
-    if (!(teamId > 0)) return;
+  const loadTeamName = useCallback(async () => {
+    if (!(teamId > 0)) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const ps = await playersDB.getByTeamPublic(teamId);
-      setPlayers(ps);
+      setTeamName(ps[0]?.team_name || 'Squadra');
     } finally {
       setLoading(false);
     }
@@ -67,8 +74,14 @@ export default function PlayerTeamScreen() {
           onPress: async () => {
             if (!user) return;
             try {
-              await usersDB.deleteAccount(user.id);
-              await logout();
+              const ok = await usersDB.deleteAccount(user.id);
+              if (!ok) {
+                throw new Error('Delete account failed');
+              }
+              setUser(null);
+              setRole(null);
+              setPlayerIdentity({ playerId: null });
+              router.dismissAll();
               router.replace('/');
             } catch (error) {
               console.error('Error deleting account:', error);
@@ -78,7 +91,7 @@ export default function PlayerTeamScreen() {
         },
       ]
     );
-  }, [user, logout, router]);
+  }, [user, setUser, setRole, setPlayerIdentity, router]);
 
   // Dissocia da questo giocatore
   const handleUnlinkPlayer = useCallback(() => {
@@ -93,13 +106,8 @@ export default function PlayerTeamScreen() {
             if (!user) return;
             try {
               await usersDB.unlinkPlayer(user.id);
-              
-              // Aggiorna la sessione
-              const updatedUser = { ...user, playerId: null };
-              const AsyncStorage = await import('@react-native-async-storage/async-storage');
-              await AsyncStorage.default.setItem('@session:v1', JSON.stringify(updatedUser));
-              
-              // Naviga a join-team
+              setUser({ ...user, playerId: null });
+              setPlayerIdentity({ playerId: null });
               router.replace('/(player)/join-team');
             } catch (error) {
               console.error('Error unlinking player:', error);
@@ -109,44 +117,11 @@ export default function PlayerTeamScreen() {
         },
       ]
     );
-  }, [user, router]);
+  }, [user, setUser, setPlayerIdentity, router]);
 
   useEffect(() => {
-    load();
-  }, [load]);
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  }, [load]);
-
-  // nome squadra se disponibile
-  const teamName = players[0]?.team_name || 'Squadra';
-
-  const POSITION_ORDER: Record<string, number> = {
-    portiere: 0,
-    difensore: 1,
-    centrocampista: 2,
-    attaccante: 3,
-  };
-
-  const sortedPlayers = useMemo(() => {
-  return [...players].sort((a, b) => {
-    if (sortBy === 'position') {
-      // Ordine per ruolo, poi alfabetico per nome
-      const posA = POSITION_ORDER[a.position?.toLowerCase()] ?? 99;
-      const posB = POSITION_ORDER[b.position?.toLowerCase()] ?? 99;
-      if (posA !== posB) return posA - posB;
-      return a.name.localeCompare(b.name, 'it', { sensitivity: 'base' });
-    } else {
-      // Ordine alfabetico per cognome
-      const surnameA = a.surname || a.name.split(' ').pop() || a.name;
-      const surnameB = b.surname || b.name.split(' ').pop() || b.name;
-      return surnameA.localeCompare(surnameB, 'it', { sensitivity: 'base' });
-    }
-  });
-}, [players, sortBy]);
+    loadTeamName();
+  }, [loadTeamName]);
 
   /* ========== RENDERING ========== */
 
@@ -174,7 +149,7 @@ export default function PlayerTeamScreen() {
       <View style={[s.header, { paddingTop: Math.max(insets.top, 8) }]}>
         {/* Pulsante indietro */}
         <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
-          <ArrowLeft size={20} color="#1f2937" />
+          <ArrowLeft size={20} color="#ffffff" />
         </TouchableOpacity>
 
         {/* Titolo con nome squadra */}
@@ -193,39 +168,58 @@ export default function PlayerTeamScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Lista dei giocatori con scroll e refresh */}
-      <ScrollView
-        style={s.list}
-        contentContainerStyle={{ paddingBottom: 24 }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-      >
-        {/* Sort buttons */}
-        <View style={s.sortBar}>
-          <Text style={s.sortLabel}>Ordina per:</Text>
-          <View style={s.sortButtons}>
-            <TouchableOpacity
-              style={[s.sortBtn, sortBy === 'position' && s.sortBtnActive]}
-              onPress={() => setSortBy('position')}
-            >
-              <Text style={[s.sortBtnText, sortBy === 'position' && s.sortBtnTextActive]}>
-                Ruolo
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.sortBtn, sortBy === 'surname' && s.sortBtnActive]}
-              onPress={() => setSortBy('surname')}
-            >
-              <Text style={[s.sortBtnText, sortBy === 'surname' && s.sortBtnTextActive]}>
-                Cognome
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+      <View style={s.content}>
+        <Text style={s.subtitle}>Scegli la sezione che vuoi vedere:</Text>
 
         <TouchableOpacity
-          style={s.attendanceCta}
+          style={s.actionCard}
+          activeOpacity={0.9}
+          onPress={() =>
+            router.push({
+              pathname: '/(player)/team/[teamId]/roster',
+              params: {
+                teamId: String(teamId),
+                teamName,
+              },
+            })
+          }
+        >
+          <View style={[s.actionIconWrap, { backgroundColor: '#dcfce7' }]}>
+            <Users size={20} color="#15803d" />
+          </View>
+          <View style={s.actionTextWrap}>
+            <Text style={s.actionTitle}>Vedi la tua Rosa</Text>
+            <Text style={s.actionDescription}>Visualizza tutti i giocatori della tua squadra.</Text>
+          </View>
+          <ChevronRight size={20} color="#9ca3af" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={s.actionCard}
+          activeOpacity={0.9}
+          onPress={() =>
+            router.push({
+              pathname: '/(player)/team/[teamId]/fines',
+              params: {
+                teamId: String(teamId),
+                teamName,
+              },
+            })
+          }
+        >
+          <View style={[s.actionIconWrap, { backgroundColor: '#fee2e2' }]}>
+            <CircleDollarSign size={20} color="#b91c1c" />
+          </View>
+          <View style={s.actionTextWrap}>
+            <Text style={s.actionTitle}>Vedi le multe</Text>
+            <Text style={s.actionDescription}>Controlla le multe assegnate a te e ai tuoi compagni.</Text>
+          </View>
+          <ChevronRight size={20} color="#9ca3af" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={s.actionCard}
+          activeOpacity={0.9}
           onPress={() =>
             router.push({
               pathname: '/(player)/attendance/[teamId]',
@@ -236,35 +230,16 @@ export default function PlayerTeamScreen() {
             })
           }
         >
-          <CalendarDays size={18} color="#1d4ed8" />
-          <Text style={s.attendanceCtaText}>
-            Apri il calendario per vedere le presenze agli allenamenti
-          </Text>
-        </TouchableOpacity>
-
-        <Text style={s.sectionTitle}>Giocatori</Text>
-
-        {players.length === 0 ? (
-          <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-            <Text style={{ color: '#6b7280' }}>Nessun giocatore.</Text>
+          <View style={[s.actionIconWrap, { backgroundColor: '#dbeafe' }]}>
+            <CalendarDays size={20} color="#1d4ed8" />
           </View>
-        ) : (
-          sortedPlayers.map((p, index) => (
-            <PlayerCard
-              key={String(p.id)}
-              player={p}
-              index={index + 1}
-              isCurrentPlayer={p.id === user?.playerId}
-              onPress={() =>
-                router.push({
-                  pathname: '/(player)/[playerId]/fines',
-                  params: { playerId: String(p.id) },
-                })
-              }
-            />
-          ))
-        )}
-      </ScrollView>
+          <View style={s.actionTextWrap}>
+            <Text style={s.actionTitle}>Vedi il calendario</Text>
+            <Text style={s.actionDescription}>Consulta presenze e assenze agli allenamenti.</Text>
+          </View>
+          <ChevronRight size={20} color="#9ca3af" />
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
@@ -273,7 +248,7 @@ const s = StyleSheet.create({
   /* ========== STILI ========== */
 
   // Contenitore principale con sfondo bianco
-  container: { flex: 1, backgroundColor: '#ffffff' },
+  container: { flex: 1, backgroundColor: '#f8fafc' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   // Header copiato dallo screen del mister (stesso stile blu)
@@ -297,45 +272,6 @@ const s = StyleSheet.create({
     marginRight: 8,
   },
 
-  sortBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    paddingHorizontal: 4,
-  },
-  sortLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6b7280',
-    marginRight: 12,
-  },
-  sortButtons: {
-    flexDirection: 'row',
-    gap: 8,
-    flex: 1,
-  },
-  sortBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    backgroundColor: '#ffffff',
-  },
-  sortBtnActive: {
-    backgroundColor: '#2e70b7ff',
-    borderColor: '#2e70b7ff',
-  },
-  sortBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6b7280',
-  },
-  sortBtnTextActive: {
-    color: '#ffffff',
-  },
-  
-  
   // Pulsante dissocia giocatore
   unlinkBtn: {
     width: 32,
@@ -364,31 +300,47 @@ const s = StyleSheet.create({
     color: '#ffffff',
   },
 
-  // Lista dei giocatori
-  list: { flex: 1, paddingHorizontal: 16, paddingTop: 16 },
-  attendanceCta: {
-    marginBottom: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#bfdbfe',
-    backgroundColor: '#eff6ff',
+  content: {
+    padding: 16,
+    gap: 12,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  actionCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  attendanceCtaText: {
+  actionIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  actionTextWrap: {
     flex: 1,
-    color: '#1e3a8a',
-    fontWeight: '700',
+    marginRight: 8,
   },
-
-  // Titolo della sezione
-  sectionTitle: {
-    fontSize: 18,
+  actionTitle: {
+    fontSize: 16,
     fontWeight: '700',
     color: '#111827',
-    marginBottom: 8,
+    marginBottom: 2,
+  },
+  actionDescription: {
+    fontSize: 13,
+    color: '#6b7280',
   },
 });

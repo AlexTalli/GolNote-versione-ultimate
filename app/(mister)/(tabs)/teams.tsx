@@ -44,7 +44,10 @@ export default function Teams() {
     async (teamData: {
       name?: string;
       description?: string;
+      season_year?: string;
+      category?: string;
       color?: string;
+      logo_uri?: string;
       password?: string;
     }) => {
       if (!teamData.name) return;
@@ -52,14 +55,17 @@ export default function Teams() {
       const ok = await addTeam({
         name: teamData.name,
         description: teamData.description || '',
+        season_year: teamData.season_year || '',
+        category: teamData.category || '',
         color: teamData.color || '#22c55e',
+        logo_uri: teamData.logo_uri,
         password: teamData.password,
       });
 
       if (!ok) {
         Alert.alert(
-          'Nome già utilizzato',
-          'Esiste già una squadra con questo nome. Scegli un nome diverso.'
+          'Squadra già presente',
+          'Esiste già una squadra con questa società, stagione e categoria. Modifica uno dei campi.'
         );
         return;
       }
@@ -74,7 +80,10 @@ export default function Teams() {
     async (teamData: {
       name?: string;
       description?: string;
+      season_year?: string;
+      category?: string;
       color?: string;
+      logo_uri?: string;
       password?: string;
     }) => {
       if (editingTeamId === null) return;
@@ -83,8 +92,8 @@ export default function Teams() {
 
       if (!ok) {
         Alert.alert(
-          'Nome già utilizzato',
-          'Esiste già una squadra con questo nome. Scegli un nome diverso.'
+          'Squadra già presente',
+          'Esiste già una squadra con questa società, stagione e categoria. Modifica uno dei campi.'
         );
         return;
       }

@@ -8,7 +8,8 @@ import {
   Alert,
 } from 'react-native';
 import { useState, useCallback, useMemo } from 'react';
-import { Plus } from 'lucide-react-native';
+import { Plus, Link2 } from 'lucide-react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { TeamCard } from '@/components/TeamCard';
 import { AddTeamModal } from '@/components/AddTeamModal';
 import { useDatabase, useTeams } from '@/hooks/useDatabase';
@@ -31,6 +32,7 @@ export default function Teams() {
     loading,
     addTeam,
     deleteTeam,
+    leaveDelegatedTeam,
     updateTeam,
     refreshTeams,
   } = useTeams({ enabled });
@@ -49,6 +51,7 @@ export default function Teams() {
       color?: string;
       logo_uri?: string;
       password?: string;
+      mister_password?: string;
     }) => {
       if (!teamData.name) return;
 
@@ -60,6 +63,7 @@ export default function Teams() {
         color: teamData.color || '#22c55e',
         logo_uri: teamData.logo_uri,
         password: teamData.password,
+        mister_password: teamData.mister_password,
       });
 
       if (!ok) {
@@ -85,10 +89,20 @@ export default function Teams() {
       color?: string;
       logo_uri?: string;
       password?: string;
+      mister_password?: string;
     }) => {
       if (editingTeamId === null) return;
 
-      const ok = await updateTeam(editingTeamId, teamData);
+      const ok = await updateTeam(editingTeamId, {
+        name: teamData.name,
+        description: teamData.description,
+        season_year: teamData.season_year,
+        category: teamData.category,
+        color: teamData.color,
+        logo_uri: teamData.logo_uri,
+        password: teamData.password,
+        mister_password: teamData.mister_password,
+      });
 
       if (!ok) {
         Alert.alert(
@@ -111,9 +125,22 @@ export default function Teams() {
     setRefreshing(false);
   }, [refreshTeams]);
 
+  // Ricarica quando la tab torna in focus (es. dopo accesso a squadra delegata)
+  useFocusEffect(
+    useCallback(() => {
+      if (!enabled) return;
+      refreshTeams();
+    }, [enabled, refreshTeams])
+  );
+
   // Chiede conferma prima di eliminare squadra (cascata su giocatori e multe)
   const askDeleteTeam = useCallback(
-    (id: number, name: string) => {
+    (id: number, name: string, isDelegated?: boolean) => {
+      if (isDelegated) {
+        Alert.alert('Azione non consentita', 'Puoi eliminare solo le squadre di cui sei proprietario.');
+        return;
+      }
+
       Alert.alert(
         'Elimina squadra',
         `Vuoi eliminare "${name}"?\nVerranno eliminati anche tutti i giocatori e le multe associate.`,
@@ -137,6 +164,31 @@ export default function Teams() {
     [deleteTeam, refreshTeams]
   );
 
+  const askLeaveDelegatedTeam = useCallback(
+    (id: number, name: string) => {
+      Alert.alert(
+        'Esci da squadra delegata',
+        `Vuoi uscire da "${name}"?\nNon vedrai più questa squadra tra le tue squadre e i tuoi messaggi in chat di questa squadra verranno rimossi.`,
+        [
+          { text: 'Annulla', style: 'cancel' },
+          {
+            text: 'Esci',
+            style: 'destructive',
+            onPress: async () => {
+              const ok = await leaveDelegatedTeam(id);
+              if (!ok) {
+                Alert.alert('Errore', 'Impossibile uscire dalla squadra delegata.');
+              } else {
+                await refreshTeams();
+              }
+            },
+          },
+        ]
+      );
+    },
+    [leaveDelegatedTeam, refreshTeams]
+  );
+
   // Controllo accesso: solo mister può vedere questa schermata
   if (!user || user.role !== 'mister') {
     return (
@@ -157,12 +209,25 @@ export default function Teams() {
 
   return (
     <View style={styles.container}>
-      {/* Header con titolo e bottone aggiungi */}
+      {/* Header con titolo e bottoni azioni */}
       <View style={styles.header}>
-        <Text style={styles.title}>Le tue Squadre</Text>
-        <TouchableOpacity style={styles.addButton} onPress={() => setModalVisible(true)}>
-          <Plus size={24} color="#ffffff" />
-        </TouchableOpacity>
+        <View>
+          <Text style={styles.title}>Le tue Squadre</Text>
+        </View>
+        <View style={styles.headerButtons}>
+          {/* Bottone accedi a squadra delegata */}
+          <TouchableOpacity 
+            style={styles.delegateButton} 
+            onPress={() => router.push('/(mister)/join-team')}
+          >
+            <Link2 size={14} color="#2563eb" />
+            <Text style={styles.delegateButtonText}>Accedi</Text>
+          </TouchableOpacity>
+          {/* Bottone aggiungi squadra */}
+          <TouchableOpacity style={styles.addButton} onPress={() => setModalVisible(true)}>
+            <Plus size={24} color="#ffffff" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Lista squadre o messaggio vuoto */}
@@ -193,11 +258,13 @@ export default function Teams() {
               },
             })
           }
-          onEdit={() => {
+          onEdit={team.is_delegated ? undefined : (() => {
             setEditingTeamId(team.id);
             setModalVisible(true);
-          }}
-          onDelete={() => askDeleteTeam(team.id, team.name)}
+          })}
+          onDelete={team.is_delegated
+            ? (() => askLeaveDelegatedTeam(team.id, team.name))
+            : (() => askDeleteTeam(team.id, team.name, team.is_delegated))}
         />
       ))}
         </ScrollView>
@@ -230,6 +297,28 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e5e7eb',
   },
   title: { fontSize: 20, fontWeight: 'bold', color: '#1f2937' },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  delegateButton: {
+    backgroundColor: '#eff6ff',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  delegateButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2563eb',
+  },
   addButton: {
     backgroundColor: '#22c55e',
     width: 44,

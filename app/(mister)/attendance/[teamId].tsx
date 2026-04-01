@@ -162,7 +162,7 @@ export default function AttendanceCalendarScreen() {
             borderWidth: 2,
             borderColor,
             borderRadius: 16,
-            backgroundColor: isSelected ? '#2563eb' : 'transparent',
+            backgroundColor: isSelected ? borderColor : 'transparent',
           },
           text: {
             color: isSelected ? '#ffffff' : '#1f2937',
@@ -294,11 +294,15 @@ export default function AttendanceCalendarScreen() {
 
         <View style={styles.legendRow}>
           <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#2563eb' }]} />
+            <View style={[styles.legendDotRing, { borderColor: '#2563eb' }]}>
+              <View style={styles.legendDotHole} />
+            </View>
             <Text style={styles.legendText}>Data completa (a tutti i giocatori è segnata la presenza)</Text>
           </View>
           <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#93c5fd' }]} />
+            <View style={[styles.legendDotRing, { borderColor: '#93c5fd' }]}>
+              <View style={styles.legendDotHole} />
+            </View>
             <Text style={styles.legendText}>Data parziale (mancano presenze di alcuni giocatori)</Text>
           </View>
         </View>
@@ -457,6 +461,20 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
+  },
+  legendDotRing: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  legendDotHole: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#ffffff',
   },
   legendText: {
     color: '#4b5563',

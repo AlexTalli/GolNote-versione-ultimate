@@ -131,6 +131,8 @@ export default function PlayerLayout() {
       <Stack.Screen name="player-attendance/[teamId]/[playerId]" options={{ gestureEnabled: false }} />
       {/* Multe del giocatore */}
       <Stack.Screen name="[playerId]/fines" options={{ gestureEnabled: false }} />
+      {/* Chat con il mister */}
+      <Stack.Screen name="chat" options={{ gestureEnabled: false }} />
     </Stack>
   );
 }

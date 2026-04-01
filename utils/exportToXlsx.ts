@@ -12,7 +12,6 @@ const STATUS_SHORT_MAP: Record<AttendanceStatus, string> = {
   absent_justified: 'AG',
   absent_unjustified: 'AI',
   sick: 'M',
-  malato: 'M',
   riposo: 'R',
 };
 
@@ -23,7 +22,6 @@ const STATUS_FULL_MAP: Record<AttendanceStatus, string> = {
   absent_justified: 'Assente Giustificato',
   absent_unjustified: 'Assente Ingiustificato',
   sick: 'Malato',
-  malato: 'Malato',
   riposo: 'Riposo',
 };
 
@@ -120,7 +118,6 @@ export async function exportMonthAttendanceXLSX(
       absent_justified: 0,
       absent_unjustified: 0,
       sick: 0,
-      malato: 0,
       riposo: 0,
     };
 
@@ -390,10 +387,13 @@ export async function exportTeamRosterXLSX(
 
 /* ========== MISTER FINES XLSX ========== */
 
+export type MisterFinesExportSort = 'surname' | 'payment_status';
+
 export async function exportMisterFinesXLSX(
   ownerId: string,
   teamId?: number,
-  teamName?: string
+  teamName?: string,
+  sortBy: MisterFinesExportSort = 'surname'
 ): Promise<void> {
   console.log('[exportMisterFinesXLSX] Start - ownerId:', ownerId, 'teamId:', teamId);
 
@@ -418,13 +418,48 @@ export async function exportMisterFinesXLSX(
 
   console.log('[exportMisterFinesXLSX] Total fines:', allFines.length);
 
-  // Ordina per team, poi per cognome giocatore, poi per data creazione multa
-  allFines.sort((a, b) => {
-    const teamCompare = (a.team_name || '').localeCompare(b.team_name || '', 'it', { sensitivity: 'base' });
-    if (teamCompare !== 0) return teamCompare;
+  const getPlayerSortKey = (playerName?: string | null) => {
+    const full = (playerName || '').trim();
+    if (!full) return '';
 
-    const playerCompare = (a.player_name || '').localeCompare(b.player_name || '', 'it', { sensitivity: 'base' });
-    if (playerCompare !== 0) return playerCompare;
+    // Formato "Cognome Nome" (usato nell'app) oppure fallback robusto
+    const parts = full.split(' ').filter(Boolean);
+    if (parts.length <= 1) return full.toLowerCase();
+
+    const surname = parts[0];
+    const givenName = parts.slice(1).join(' ');
+    return `${surname.toLowerCase()} ${givenName.toLowerCase()}`;
+  };
+
+  // Ordina secondo criterio scelto
+  allFines.sort((a, b) => {
+    if (sortBy === 'payment_status') {
+      // Prima TUTTE le non pagate, poi TUTTE le pagate (a prescindere dalla squadra)
+      const paidA = !!a.is_paid;
+      const paidB = !!b.is_paid;
+      if (paidA !== paidB) return paidA ? 1 : -1;
+
+      const teamCompare = (a.team_name || '').localeCompare(b.team_name || '', 'it', { sensitivity: 'base' });
+      if (teamCompare !== 0) return teamCompare;
+
+      const playerCompare = getPlayerSortKey(a.player_name).localeCompare(
+        getPlayerSortKey(b.player_name),
+        'it',
+        { sensitivity: 'base' }
+      );
+      if (playerCompare !== 0) return playerCompare;
+    } else {
+      // Default: cognome giocatore
+      const teamCompare = (a.team_name || '').localeCompare(b.team_name || '', 'it', { sensitivity: 'base' });
+      if (teamCompare !== 0) return teamCompare;
+
+      const playerCompare = getPlayerSortKey(a.player_name).localeCompare(
+        getPlayerSortKey(b.player_name),
+        'it',
+        { sensitivity: 'base' }
+      );
+      if (playerCompare !== 0) return playerCompare;
+    }
 
     return (b.created_at || '').localeCompare(a.created_at || '');
   });

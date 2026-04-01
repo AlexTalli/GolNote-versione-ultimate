@@ -2,6 +2,52 @@ import { supabase } from '@/lib/supabase';
 import { cancelFineDueNotificationByFineId } from '@/utils/notifications';
 
 /* =========================
+ *    STORAGE HELPERS
+ * ========================= */
+
+/**
+ * Upload team logo to Supabase Storage
+ * Returns public URL if successful, null if failed
+ */
+export const uploadTeamLogo = async (
+  teamId: number,
+  fileUri: string,
+  fileName: string,
+  contentType = 'image/jpeg'
+): Promise<string | null> => {
+  try {
+    // Read file from device
+    const response = await fetch(fileUri);
+    const fileArrayBuffer = await response.arrayBuffer();
+
+    // Upload to storage
+    const filePath = `teams/${teamId}/${fileName}`;
+    const { error } = await supabase.storage
+      .from('team-logos')
+      .upload(filePath, fileArrayBuffer, {
+        cacheControl: '3600',
+        upsert: true,
+        contentType,
+      });
+
+    if (error) {
+      console.error('[uploadTeamLogo] error:', error);
+      return null;
+    }
+
+    // Get public URL
+    const { data } = supabase.storage
+      .from('team-logos')
+      .getPublicUrl(filePath);
+
+    return data?.publicUrl || null;
+  } catch (e) {
+    console.error('[uploadTeamLogo] exception:', e);
+    return null;
+  }
+};
+
+/* =========================
  *        TIPI
  * ========================= */
 
@@ -26,6 +72,7 @@ export type Team = {
   owner_user_id: string; // UUID del profilo
   created_at: string;
   password_hash?: string | null;
+  mister_password?: string | null;
 };
 
 export type Player = {
@@ -57,6 +104,28 @@ export type Fine = {
   player_number?: string;
   team_name?: string;
   team_color?: string;
+};
+
+export type Chat = {
+  id: number;
+  team_id: number;
+  player_id: number;
+  created_at: string;
+  updated_at: string;
+  player_name?: string;
+  player_number?: string;
+};
+
+export type Message = {
+  id: number;
+  chat_id: number;
+  sender_id: string;
+  text: string;
+  created_at: string;
+  sender_nickname?: string;
+  team_name?: string;
+  player_name?: string;
+  player_surname?: string;
 };
 
 export type PlayerAttendanceSummary = {
@@ -226,7 +295,18 @@ export const teamsDB = {
       return [];
     }
 
-    const { data, error } = await supabase
+    const { data: linkedRows, error: linkedError } = await supabase
+      .from('team_misters')
+      .select('team_id')
+      .eq('user_id', ownerId);
+
+    if (linkedError) {
+      console.error('[teamsDB] getAllByOwner linked teams error:', linkedError);
+    }
+
+    const linkedTeamIds = (linkedRows || []).map((r: any) => Number(r.team_id)).filter(Boolean);
+
+    let query = supabase
       .from('teams')
       .select(`
         *,
@@ -235,16 +315,27 @@ export const teamsDB = {
           fines(id, is_paid)
         )
       `)
-      .eq('owner_user_id', ownerId)
       .order('name', { ascending: true });
-    
+
+    if (linkedTeamIds.length > 0) {
+      query = query.or(`owner_user_id.eq.${ownerId},id.in.(${linkedTeamIds.join(',')})`);
+    } else {
+      query = query.eq('owner_user_id', ownerId);
+    }
+
+    const { data, error } = await query;
+
     if (error) {
       console.error('[teamsDB] getAllByOwner error:', error);
       return [];
     }
 
     // Trasforma i dati aggregati in players_count e active_fines
-    return (data || []).map((team: any) => {
+    const uniqueTeams = Array.from(
+      new Map((data || []).map((team: any) => [team.id, team])).values()
+    );
+
+    return uniqueTeams.map((team: any) => {
       const playersCount = (team.players || []).length;
       
       // Conta tutte le multe non pagate di tutti i giocatori del team
@@ -260,6 +351,8 @@ export const teamsDB = {
         ...rest,
         players_count: playersCount,
         active_fines: activeFines,
+        is_delegated: rest.owner_user_id !== ownerId,
+        access_role: rest.owner_user_id === ownerId ? 'owner' : 'delegated',
       };
     }) as Team[];
   },
@@ -393,6 +486,130 @@ export const teamsDB = {
     }
     
     return true;
+  },
+
+  /**
+   * Cerca squadre per nome (per accesso mister delegato)
+   * Ritorna solo squadre che hanno mister_password impostato
+   */
+  async searchByNameForMister(query: string): Promise<Team[]> {
+    const normalized = query.trim();
+    if (normalized.length < 2) return [];
+
+    const { data, error } = await supabase
+      .from('teams')
+      .select('*')
+      .ilike('name', `%${normalized}%`)
+      .not('mister_password', 'is', null)
+      .order('name', { ascending: true });
+
+    if (error) {
+      console.error('[teamsDB] searchByNameForMister error:', error);
+      return [];
+    }
+
+    return (data || []) as Team[];
+  },
+
+  /**
+   * Verifica se la password del mister corrisponde
+   */
+  async verifyMisterPassword(teamId: number, password: string): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('teams')
+      .select('mister_password')
+      .eq('id', teamId)
+      .single();
+
+    if (error || !data) {
+      console.error('[teamsDB] verifyMisterPassword error:', error);
+      return false;
+    }
+
+    const storedPassword = (data as any).mister_password;
+    return storedPassword === password;
+  },
+
+  /**
+   * Aggiorna la password di delega mister
+   */
+  async updateMisterPassword(teamId: number, password: string | null): Promise<boolean> {
+    const { error } = await supabase
+      .from('teams')
+      .update({ mister_password: password })
+      .eq('id', teamId);
+
+    if (error) {
+      console.error('[teamsDB] updateMisterPassword error:', error);
+      return false;
+    }
+
+    return true;
+  },
+
+  /**
+   * Permette a un mister delegato di uscire da una squadra
+   */
+  async leaveDelegatedTeam(teamId: number, userId: string): Promise<boolean> {
+    // 1) Rimuove i messaggi inviati da questo mister nelle chat della squadra
+    const { data: teamChats, error: chatsError } = await supabase
+      .from('chats')
+      .select('id')
+      .eq('team_id', teamId);
+
+    if (chatsError) {
+      console.error('[teamsDB] leaveDelegatedTeam chats load error:', chatsError);
+      return false;
+    }
+
+    const chatIds = (teamChats || []).map((c: any) => Number(c.id)).filter(Boolean);
+
+    if (chatIds.length > 0) {
+      const { error: messagesError } = await supabase
+        .from('messages')
+        .delete()
+        .eq('sender_id', userId)
+        .in('chat_id', chatIds);
+
+      if (messagesError) {
+        console.error('[teamsDB] leaveDelegatedTeam messages delete error:', messagesError);
+        return false;
+      }
+    }
+
+    // 2) Rimuove la delega mister
+    const { error } = await supabase
+      .from('team_misters')
+      .delete()
+      .eq('team_id', teamId)
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error('[teamsDB] leaveDelegatedTeam error:', error);
+      return false;
+    }
+
+    return true;
+  },
+
+  /**
+   * Accesso come mister delegato: verifica password e salva la delega
+   */
+  async joinAsDelegatedMister(teamId: number, password: string): Promise<boolean> {
+    const normalized = password.trim();
+    if (!normalized) return false;
+
+    const { data, error } = await supabase.rpc('join_team_as_mister', {
+      p_team_id: teamId,
+      p_password: normalized,
+    });
+
+    if (error) {
+      console.error('[teamsDB] joinAsDelegatedMister error:', error);
+      return false;
+    }
+
+    return !!data;
   },
 };
 
@@ -1087,6 +1304,207 @@ export const statsDB = {
       unpaid_amount: unpaidAmount,
       total_unpaid: unpaidAmount,
     };
+  },
+};
+
+/* =========================
+ *   CHATS & MESSAGES DB
+ * ========================= */
+
+export const chatsDB = {
+  /**
+   * Get all chats for a team (mister view)
+   */
+  getByTeamId: async (teamId: number): Promise<Chat[]> => {
+    const { data, error } = await supabase
+      .from('chats')
+      .select(
+        `
+        id,
+        team_id,
+        player_id,
+        created_at,
+        updated_at,
+        players!inner(id, name, surname, number)
+        `
+      )
+      .eq('team_id', teamId)
+      .order('updated_at', { ascending: false });
+
+    if (error) {
+      console.error('[chatsDB.getByTeamId] error:', error);
+      return [];
+    }
+
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      team_id: row.team_id,
+      player_id: row.player_id,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      player_name: row.players?.name || '',
+      player_number: row.players?.number || '',
+    }));
+  },
+
+  /**
+   * Get chat for a player (player view) - there's usually only one per team
+   */
+  getByPlayerId: async (playerId: number, teamId: number): Promise<Chat | null> => {
+    const { data, error } = await supabase
+      .from('chats')
+      .select('id, team_id, player_id, created_at, updated_at')
+      .eq('player_id', playerId)
+      .eq('team_id', teamId)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // No rows returned
+        return null;
+      }
+      console.error('[chatsDB.getByPlayerId] error:', error);
+      return null;
+    }
+
+    return data as Chat;
+  },
+
+  /**
+   * Get or create a chat between mister and player
+   */
+  getOrCreateChat: async (teamId: number, playerId: number): Promise<Chat | null> => {
+    const { data: existing, error: selectError } = await supabase
+      .from('chats')
+      .select('id, team_id, player_id, created_at, updated_at')
+      .eq('team_id', teamId)
+      .eq('player_id', playerId)
+      .single();
+
+    if (!selectError && existing) {
+      return existing as Chat;
+    }
+
+    // Create new chat
+    const { data: newChat, error: insertError } = await supabase
+      .from('chats')
+      .insert({
+        team_id: teamId,
+        player_id: playerId,
+      })
+      .select('id, team_id, player_id, created_at, updated_at')
+      .single();
+
+    if (insertError) {
+      console.error('[chatsDB.getOrCreateChat] insert error:', insertError);
+      return null;
+    }
+
+    return newChat as Chat;
+  },
+
+  /**
+   * Update chat updated_at timestamp
+   */
+  updateTimestamp: async (chatId: number): Promise<boolean> => {
+    const { error } = await supabase
+      .from('chats')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', chatId);
+
+    if (error) {
+      console.error('[chatsDB.updateTimestamp] error:', error);
+      return false;
+    }
+
+    return true;
+  },
+};
+
+export const messagesDB = {
+  /**
+   * Get all messages for a chat, ordered by creation time
+   */
+  getByChatId: async (chatId: number): Promise<Message[]> => {
+    const { data, error } = await supabase
+      .from('messages')
+      .select(
+        `
+        id,
+        chat_id,
+        sender_id,
+        text,
+        created_at,
+        profiles(nickname),
+        chats!inner(team_id, player_id, teams(name), players(name, surname))
+        `
+      )
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('[messagesDB.getByChatId] error:', error);
+      return [];
+    }
+
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      chat_id: row.chat_id,
+      sender_id: row.sender_id,
+      text: row.text,
+      created_at: row.created_at,
+      sender_nickname: row.profiles?.nickname || 'Unknown',
+      team_name: row.chats?.teams?.name,
+      player_name: row.chats?.players?.name,
+      player_surname: row.chats?.players?.surname,
+    }));
+  },
+
+  /**
+   * Send a message to a chat
+   */
+  sendMessage: async (chatId: number, senderId: string, text: string): Promise<Message | null> => {
+    if (!text.trim()) {
+      return null;
+    }
+
+    const { data: newMessage, error: insertError } = await supabase
+      .from('messages')
+      .insert({
+        chat_id: chatId,
+        sender_id: senderId,
+        text: text.trim(),
+      })
+      .select('id, chat_id, sender_id, text, created_at')
+      .single();
+
+    if (insertError) {
+      console.error('[messagesDB.sendMessage] insert error:', insertError);
+      return null;
+    }
+
+    // Update chat timestamp
+    await chatsDB.updateTimestamp(chatId);
+
+    return newMessage as Message;
+  },
+
+  /**
+   * Delete own message
+   */
+  deleteMessage: async (messageId: number, senderId: string): Promise<boolean> => {
+    const { error } = await supabase
+      .from('messages')
+      .delete()
+      .eq('id', messageId)
+      .eq('sender_id', senderId);
+
+    if (error) {
+      console.error('[messagesDB.deleteMessage] error:', error);
+      return false;
+    }
+
+    return true;
   },
 };
 

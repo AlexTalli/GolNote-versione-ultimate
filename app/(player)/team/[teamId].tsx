@@ -14,13 +14,14 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 
 // Icona per il pulsante indietro
 import {
-  ArrowLeft,
   CalendarDays,
   CircleDollarSign,
   ChevronRight,
   Trash2,
   UserX,
   Users,
+  MessageCircle,
+  House,
 } from 'lucide-react-native';
 
 // Database per caricare i giocatori
@@ -119,6 +120,27 @@ export default function PlayerTeamScreen() {
     );
   }, [user, setUser, setPlayerIdentity, router]);
 
+  // Torna alla home iniziale (selezione ruolo), come nelle impostazioni mister
+  const handleGoHome = useCallback(() => {
+    Alert.alert(
+      'Vuoi tornare alla Home?',
+      'Verrai riportato alla selezione ruolo.',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Sì',
+          onPress: () => {
+            setUser(null);
+            setRole(null);
+            setPlayerIdentity({ playerId: null });
+            router.dismissAll();
+            router.replace('/');
+          },
+        },
+      ]
+    );
+  }, [setUser, setRole, setPlayerIdentity, router]);
+
   useEffect(() => {
     loadTeamName();
   }, [loadTeamName]);
@@ -147,15 +169,15 @@ export default function PlayerTeamScreen() {
     <SafeAreaView style={s.container} edges={['left', 'right', 'bottom']}>
       {/* Header con pulsante indietro e titolo */}
       <View style={[s.header, { paddingTop: Math.max(insets.top, 8) }]}>
-        {/* Pulsante indietro */}
-        <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
-          <ArrowLeft size={20} color="#ffffff" />
-        </TouchableOpacity>
-
         {/* Titolo con nome squadra */}
         <Text style={s.title} numberOfLines={1}>
           {teamName}
         </Text>
+
+        {/* Icona home: torna alla selezione ruolo */}
+        <TouchableOpacity style={s.homeBtn} onPress={handleGoHome}>
+          <House size={20} color="#ffffff" />
+        </TouchableOpacity>
 
         {/* Icona dissocia giocatore */}
         <TouchableOpacity style={s.unlinkBtn} onPress={handleUnlinkPlayer}>
@@ -239,6 +261,29 @@ export default function PlayerTeamScreen() {
           </View>
           <ChevronRight size={20} color="#9ca3af" />
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={s.actionCard}
+          activeOpacity={0.9}
+          onPress={() =>
+            router.push({
+              pathname: '/(player)/chat',
+              params: {
+                teamId: String(teamId),
+                teamName,
+              },
+            })
+          }
+        >
+          <View style={[s.actionIconWrap, { backgroundColor: '#fce7f3' }]}>
+            <MessageCircle size={20} color="#be185d" />
+          </View>
+          <View style={s.actionTextWrap}>
+            <Text style={s.actionTitle}>Chat col Mister</Text>
+            <Text style={s.actionDescription}>Avvia una conversazione con il tuo Mister per comunicargli qualcosa.</Text>
+          </View>
+          <ChevronRight size={20} color="#9ca3af" />
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -262,14 +307,14 @@ const s = StyleSheet.create({
     borderBottomColor: '#e5e7eb',
   },
 
-  // Pulsante indietro
-  backBtn: {
+  // Pulsante home
+  homeBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
+    marginLeft: 4,
   },
 
   // Pulsante dissocia giocatore

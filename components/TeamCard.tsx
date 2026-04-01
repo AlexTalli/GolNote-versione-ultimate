@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
-import { ChevronRight, Users, CircleAlert as AlertCircle, Trash2, Edit } from 'lucide-react-native';
+import { ChevronRight, Users, CircleAlert as AlertCircle, Trash2, Edit, LogOut } from 'lucide-react-native';
 
 /* ========== INTERFACCE ========== */
 
@@ -14,6 +14,8 @@ interface Team {
   active_fines: number; // Numero di multe attive
   color: string; // Colore rappresentativo della squadra
   logo_uri?: string | null; // Logo opzionale della squadra
+  is_delegated?: boolean;
+  access_role?: 'owner' | 'delegated';
 }
 
 // Props del componente TeamCard
@@ -45,6 +47,15 @@ export function TeamCard({ team, onPress, onEdit, onDelete }: TeamCardProps) {
             <Text style={styles.teamName} numberOfLines={2}>
               {team.name}
             </Text>
+
+            <View style={[
+              styles.roleBadge,
+              team.is_delegated ? styles.roleBadgeDelegated : styles.roleBadgeOwner,
+            ]}>
+              <Text style={styles.roleBadgeText}>
+                {team.is_delegated ? 'Delegata' : 'Proprietario'}
+              </Text>
+            </View>
           </View>
 
           <View style={styles.headerButtons}>
@@ -69,10 +80,17 @@ export function TeamCard({ team, onPress, onEdit, onDelete }: TeamCardProps) {
                   e.stopPropagation(); // evita apertura card, cosi l'utente non apre per sbaglio la card
                   onDelete();
                 }}
-                style={styles.trashBtn}
+                style={styles.deleteBtn}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Trash2 size={18} color="#ef4444" />
+                {team.is_delegated ? (
+                  <View style={styles.leaveWrap}>
+                    <LogOut size={16} color="#2563eb" />
+                    <Text style={styles.leaveText}>Esci</Text>
+                  </View>
+                ) : (
+                  <Trash2 size={18} color="#ef4444" />
+                )}
               </TouchableOpacity>
             )}
 
@@ -158,6 +176,24 @@ const styles = StyleSheet.create({
   nameWrap: {
     flex: 1,
     marginRight: 10,
+    gap: 6,
+  },
+  roleBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  roleBadgeOwner: {
+    backgroundColor: '#dcfce7',
+  },
+  roleBadgeDelegated: {
+    backgroundColor: '#dbeafe',
+  },
+  roleBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1f2937',
   },
   headerButtons: {
     flexDirection: 'row',
@@ -167,8 +203,24 @@ const styles = StyleSheet.create({
   editBtn: {
     marginRight: 4,
   },
-  trashBtn: {
+  deleteBtn: {
     marginRight: 4,
+  },
+  leaveWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  leaveText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2563eb',
   },
 
   // Testo del nome della squadra

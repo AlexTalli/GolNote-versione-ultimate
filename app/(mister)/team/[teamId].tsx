@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { ArrowLeft, Users, CalendarDays, CircleDollarSign, ChevronRight } from 'lucide-react-native';
+import { ArrowLeft, Users, CalendarDays, CircleDollarSign, ChevronRight, MessageCircle } from 'lucide-react-native';
 
 export default function TeamActionsScreen() {
   const insets = useSafeAreaInsets();
@@ -59,7 +59,7 @@ export default function TeamActionsScreen() {
             <Users size={20} color="#15803d" />
           </View>
           <View style={styles.actionTextWrap}>
-            <Text style={styles.actionTitle}>Crea la tua rosa</Text>
+            <Text style={styles.actionTitle}>La tua rosa</Text>
             <Text style={styles.actionDescription}>Aggiungi, modifica e gestisci i tuoi giocatori.</Text>
           </View>
           <ChevronRight size={20} color="#9ca3af" />
@@ -107,6 +107,29 @@ export default function TeamActionsScreen() {
           <View style={styles.actionTextWrap}>
             <Text style={styles.actionTitle}>Gestisci il calendario</Text>
             <Text style={styles.actionDescription}>Apri il calendario e segna le presenze agli allenamenti.</Text>
+          </View>
+          <ChevronRight size={20} color="#9ca3af" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionCard}
+          activeOpacity={0.9}
+          onPress={() =>
+            router.push({
+              pathname: '/(mister)/chat',
+              params: {
+                teamId: String(teamId),
+                teamName: safeTeamName,
+              },
+            })
+          }
+        >
+          <View style={[styles.actionIconWrap, { backgroundColor: '#fce7f3' }]}>
+            <MessageCircle size={20} color="#be185d" />
+          </View>
+          <View style={styles.actionTextWrap}>
+            <Text style={styles.actionTitle}>Chat con uno dei tuoi giocatori</Text>
+            <Text style={styles.actionDescription}>Avvia una conversazione con uno dei tuoi giocatori per comunicargli qualcosa.</Text>
           </View>
           <ChevronRight size={20} color="#9ca3af" />
         </TouchableOpacity>

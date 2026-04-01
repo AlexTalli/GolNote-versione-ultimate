@@ -8,10 +8,15 @@ import {
   finesDB,
   trainingDB,
   statsDB,
+  chatsDB,
+  messagesDB,
 } from '@/database/database.supabase';
-import type { AttendanceStatus, TeamAttendanceRow, PlayerAttendanceSummary, PlayerAttendanceHistory } from '@/database/database.supabase';
+import type { AttendanceStatus, TeamAttendanceRow, PlayerAttendanceSummary, PlayerAttendanceHistory, Chat, Message } from '@/database/database.supabase';
+import { supabase } from '@/lib/supabase';
+import { sendChatMessageNotification } from '@/utils/notifications';
 
 import { useAuth } from '@/contexts/AuthContext';
+import { useRole } from '@/contexts/RoleContext';
 
 // -------------------- Core init --------------------
 export const useDatabase = () => {
@@ -47,7 +52,8 @@ type TeamInput = {
   category: string;
   color: string;
   logo_uri?: string;
-  password?: string; 
+  password?: string;
+  mister_password?: string;
 };
 
 export const useTeams = (deps: { enabled?: boolean } = {}) => {
@@ -95,12 +101,15 @@ export const useTeams = (deps: { enabled?: boolean } = {}) => {
           )
         : null;
 
-      const { password, ...rest } = teamData;
+      const mister_password = teamData.mister_password?.trim() ?? null;
+
+      const { password, mister_password: _, ...rest } = teamData;
 
       const id = await teamsDB.create({
         ...rest,
-          owner_user_id: ownerUserId,
+        owner_user_id: ownerUserId,
         password_hash,
+        mister_password,
       } as any);
 
       if (id) {
@@ -116,6 +125,16 @@ export const useTeams = (deps: { enabled?: boolean } = {}) => {
     async (id: number): Promise<boolean> => {
       if (!ownerUserId) return false;
       const success = await teamsDB.delete(id);
+      if (success) await loadTeams();
+      return success;
+    },
+    [ownerUserId, loadTeams]
+  );
+
+  const leaveDelegatedTeam = useCallback(
+    async (teamId: number): Promise<boolean> => {
+      if (!ownerUserId) return false;
+      const success = await teamsDB.leaveDelegatedTeam(teamId, ownerUserId);
       if (success) await loadTeams();
       return success;
     },
@@ -143,6 +162,12 @@ export const useTeams = (deps: { enabled?: boolean } = {}) => {
         delete updateData.password;
       }
 
+      // Se c'è mister_password, non hashificare (plaintext per accesso rapido)
+      if (teamData.mister_password !== undefined) {
+        const normalizedMisterPassword = teamData.mister_password.trim();
+        updateData.mister_password = normalizedMisterPassword || null;
+      }
+
       const success = await teamsDB.update(teamId, updateData);
       if (success) await loadTeams();
       return success;
@@ -155,7 +180,15 @@ export const useTeams = (deps: { enabled?: boolean } = {}) => {
     else setLoading(false);
   }, [enabled, loadTeams]);
 
-  return { teams, loading, addTeam, deleteTeam, updateTeam, refreshTeams: loadTeams };
+  return {
+    teams,
+    loading,
+    addTeam,
+    deleteTeam,
+    leaveDelegatedTeam,
+    updateTeam,
+    refreshTeams: loadTeams,
+  };
 };
 
 // ==================== PLAYERS (Mister) ====================
@@ -670,3 +703,215 @@ export const useMonthAttendanceStatus = (
 
   return { markedDates, loading, refreshMonthStatus: loadMonthStatus };
 };
+
+// ==================== CHATS (Mister & Player) ====================
+
+export const useTeamChats = (teamId: number, deps: any[] = []) => {
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const loadChats = useCallback(async () => {
+    if (!(teamId > 0)) return;
+
+    try {
+      setLoading(true);
+      const data = await chatsDB.getByTeamId(teamId);
+      setChats(data);
+    } catch (error) {
+      console.error('Error loading team chats:', error);
+      setChats([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [teamId]);
+
+  useEffect(() => {
+    loadChats();
+  }, [loadChats, ...deps]);
+
+  return {
+    chats,
+    loading,
+    refreshChats: loadChats,
+  };
+};
+
+export const usePlayerChat = (playerId: number, teamId: number, deps: any[] = []) => {
+  const [chat, setChat] = useState<Chat | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const loadChat = useCallback(async () => {
+    if (!(playerId > 0) || !(teamId > 0)) return;
+
+    try {
+      setLoading(true);
+      const data = await chatsDB.getByPlayerId(playerId, teamId);
+      setChat(data);
+    } catch (error) {
+      console.error('Error loading player chat:', error);
+      setChat(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [playerId, teamId]);
+
+  const getOrCreateChat = useCallback(async (): Promise<Chat | null> => {
+    if (!(playerId > 0) || !(teamId > 0)) return null;
+
+    try {
+      const data = await chatsDB.getOrCreateChat(teamId, playerId);
+      setChat(data);
+      return data;
+    } catch (error) {
+      console.error('Error getting or creating chat:', error);
+      return null;
+    }
+  }, [playerId, teamId]);
+
+  useEffect(() => {
+    loadChat();
+  }, [loadChat, ...deps]);
+
+  return {
+    chat,
+    loading,
+    refreshChat: loadChat,
+    getOrCreateChat,
+  };
+};
+
+// ==================== MESSAGES ====================
+
+export const useChatMessages = (chatId: number, pollIntervalMs = 2000, deps: any[] = []) => {
+  const { user } = useAuth();
+  const { role } = useRole();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [lastNotifiedMessageId, setLastNotifiedMessageId] = useState<number | null>(null);
+
+  const loadMessages = useCallback(async () => {
+    if (!(chatId > 0)) return;
+
+    try {
+      setLoading(true);
+      const data = await messagesDB.getByChatId(chatId);
+      setMessages(data);
+
+      // Check for new messages from other users and send notification
+      if (user?.id && data.length > 0) {
+        const latestMessage = data[data.length - 1];
+        
+        // If this is a new message from another user that we haven't notified yet
+        if (
+          latestMessage.id !== lastNotifiedMessageId &&
+          latestMessage.sender_id !== user.id &&
+          latestMessage.team_name
+        ) {
+          setLastNotifiedMessageId(latestMessage.id);
+          
+          // Determine player name based on role
+          let playerName = 'Un giocatore';
+          if (role === 'mister' && latestMessage.player_name) {
+            playerName = latestMessage.player_name;
+            if (latestMessage.player_surname) {
+              playerName = `${latestMessage.player_name} ${latestMessage.player_surname}`;
+            }
+          }
+          
+          await sendChatMessageNotification(
+            role || 'player',
+            playerName,
+            latestMessage.team_name
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Error loading chat messages:', error);
+      setMessages([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [chatId, user?.id, role, lastNotifiedMessageId]);
+
+  const sendMessage = useCallback(
+    async (senderId: string, text: string): Promise<boolean> => {
+      if (!(chatId > 0)) return false;
+
+      try {
+        const result = await messagesDB.sendMessage(chatId, senderId, text);
+        if (result) {
+          // Optimistic update
+          setMessages((prev) => [...prev, result]);
+          return true;
+        }
+        return false;
+      } catch (error) {
+        console.error('Error sending message:', error);
+        return false;
+      }
+    },
+    [chatId]
+  );
+
+  const deleteMessage = useCallback(
+    async (senderId: string, messageId: number): Promise<boolean> => {
+      if (!(chatId > 0)) return false;
+
+      try {
+        const ok = await messagesDB.deleteMessage(messageId, senderId);
+        if (ok) {
+          setMessages((prev) => prev.filter((m) => m.id !== messageId));
+        }
+        return ok;
+      } catch (error) {
+        console.error('Error deleting message:', error);
+        return false;
+      }
+    },
+    [chatId]
+  );
+
+  // Load messages on mount and set up polling
+  useEffect(() => {
+    if (!(chatId > 0)) {
+      setMessages([]);
+      return;
+    }
+
+    loadMessages();
+
+    const channel = supabase
+      .channel(`chat-messages-${chatId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'messages',
+          filter: `chat_id=eq.${chatId}`,
+        },
+        () => {
+          loadMessages();
+        }
+      )
+      .subscribe();
+
+    const pollInterval = setInterval(() => {
+      loadMessages();
+    }, pollIntervalMs);
+
+    return () => {
+      clearInterval(pollInterval);
+      supabase.removeChannel(channel);
+    };
+  }, [chatId, loadMessages, pollIntervalMs, user?.id, ...deps]);
+
+  return {
+    messages,
+    loading,
+    sendMessage,
+    deleteMessage,
+    refreshMessages: loadMessages,
+  };
+};
+

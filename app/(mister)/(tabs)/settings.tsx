@@ -16,6 +16,7 @@ import {
   ActivityIndicator,
   Modal,
   TextInput,
+  Image,
   ScrollView as RNScrollView,
   RefreshControl,
 } from 'react-native';
@@ -34,6 +35,7 @@ import {
 
 // Export utilities
 import { exportMisterFinesXLSX } from '@/utils/exportToXlsx';
+import type { MisterFinesExportSort } from '@/utils/exportToXlsx';
 
 // hook per caricare le squadre del mister
 import { useTeams } from '@/hooks/useDatabase';
@@ -60,6 +62,7 @@ export default function MisterSettings() {
   const [nicknameModalVisible, setNicknameModalVisible] = useState(false);
   const [newDisplayNickname, setNewDisplayNickname] = useState('');
   const [savingNickname, setSavingNickname] = useState(false);
+  const [exportSortBy, setExportSortBy] = useState<MisterFinesExportSort>('surname');
 
   // Stati per le notifiche settimanali
   const [weeklyEnabled, setWeeklyEnabled] = useState(false);
@@ -161,7 +164,7 @@ export default function MisterSettings() {
     setExporting(true);
 
     try {
-      await exportMisterFinesXLSX(user.id, teamId, teamName ?? 'Squadra');
+      await exportMisterFinesXLSX(user.id, teamId, teamName ?? 'Squadra', exportSortBy);
     } catch (error) {
       console.error('Error exporting fines:', error);
       Alert.alert('Errore', 'Impossibile esportare il file Excel.');
@@ -421,9 +424,9 @@ export default function MisterSettings() {
           <TouchableOpacity style={styles.option} onPress={handleChangeRole}>
             <LogOut size={20} color="#6b7280" />
             <View style={styles.optionContent}>
-              <Text style={styles.optionTitle}>Cambia Ruolo</Text>
+              <Text style={styles.optionTitle}>Torna alla Home</Text>
               <Text style={styles.optionDescription}>
-                Torna alla schermata di selezione ruolo
+                Torna alla schermata Home di selezione ruolo
               </Text>
             </View>
           </TouchableOpacity>
@@ -529,33 +532,74 @@ export default function MisterSettings() {
           <View style={styles.modal}>
             <Text style={styles.modalTitle}>Esporta multe in Excel</Text>
             <Text style={styles.modalSubtitle}>
-              Seleziona una squadra oppure tutte le squadre.
+              Seleziona ordine e squadra (o tutte le squadre).
             </Text>
+
+            <View style={styles.exportSortWrap}>
+              <Text style={styles.exportSortLabel}>Ordina export per:</Text>
+              <View style={styles.exportSortButtons}>
+                <TouchableOpacity
+                  style={[styles.exportSortBtn, exportSortBy === 'surname' && styles.exportSortBtnActive]}
+                  onPress={() => setExportSortBy('surname')}
+                >
+                  <Text style={[styles.exportSortBtnText, exportSortBy === 'surname' && styles.exportSortBtnTextActive]}>
+                    Cognome giocatore
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.exportSortBtn, exportSortBy === 'payment_status' && styles.exportSortBtnActive]}
+                  onPress={() => setExportSortBy('payment_status')}
+                >
+                  <Text style={[styles.exportSortBtnText, exportSortBy === 'payment_status' && styles.exportSortBtnTextActive]}>
+                    Non pagate → pagate
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
 
             <RNScrollView
               style={{ maxHeight: 260, marginTop: 12 }}
               contentContainerStyle={{ paddingBottom: 8 }}
             >
               <TouchableOpacity
-                style={styles.teamOption}
+                style={[styles.teamOptionCard, styles.teamOptionAll]}
                 onPress={() => {
                   console.log('⚡ TAPPED ALL TEAMS');
                   doExport(undefined, undefined);
                 }}
               >
-                <Text style={styles.teamOptionText}>Tutte le squadre</Text>
+                <Text style={styles.teamOptionTitle}>Tutte le squadre</Text>
+                <Text style={styles.teamOptionSubtitle}>Esporta un unico file con tutte le squadre</Text>
               </TouchableOpacity>
 
               {(teams ?? []).map((t: any) => (
                 <TouchableOpacity
                   key={String(t.id)}
-                  style={styles.teamOption}
+                  style={styles.teamOptionCard}
                   onPress={() => {
                     console.log('⚡ TAPPED TEAM', t.id, t.name);
                     doExport(t.id, t.name);
                   }}
                 >
-                  <Text style={styles.teamOptionText}>{t.name}</Text>
+                  <View style={styles.teamOptionLeft}>
+                    {t.logo_uri ? (
+                      <Image source={{ uri: t.logo_uri }} style={styles.teamOptionLogo} />
+                    ) : (
+                      <View style={[styles.teamOptionLogoFallback, { backgroundColor: t.color || '#22c55e' }]} />
+                    )}
+                  </View>
+
+                  <View style={styles.teamOptionContent}>
+                    <Text style={styles.teamOptionTitle} numberOfLines={1}>{t.name}</Text>
+                    {(t.season_year || t.category) ? (
+                      <Text style={styles.teamOptionSubtitle} numberOfLines={1}>
+                        {[t.season_year, t.category].filter(Boolean).join(' • ')}
+                      </Text>
+                    ) : (
+                      <Text style={styles.teamOptionSubtitle} numberOfLines={1}>Esporta solo questa squadra</Text>
+                    )}
+                  </View>
                 </TouchableOpacity>
               ))}
             </RNScrollView>
@@ -701,17 +745,89 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  // Opzione squadra nel modal
-  teamOption: {
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+  exportSortWrap: {
+    marginTop: 14,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  exportSortLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+    marginBottom: 8,
+  },
+  exportSortButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  exportSortBtn: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#ffffff',
+  },
+  exportSortBtnActive: {
+    borderColor: '#2563eb',
+    backgroundColor: '#eff6ff',
+  },
+  exportSortBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  exportSortBtnTextActive: {
+    color: '#1d4ed8',
   },
 
-  // Testo dell'opzione squadra
-  teamOptionText: {
+  // Opzione squadra nel modal
+  teamOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    marginBottom: 8,
+    backgroundColor: '#ffffff',
+  },
+  teamOptionAll: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#bfdbfe',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
+  teamOptionLeft: {
+    marginRight: 10,
+  },
+  teamOptionLogo: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  teamOptionLogoFallback: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  teamOptionContent: {
+    flex: 1,
+  },
+  teamOptionTitle: {
     fontSize: 16,
+    fontWeight: '700',
     color: '#111827',
+  },
+  teamOptionSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    color: '#6b7280',
   },
 
   // Azioni del modal (pulsante annulla)

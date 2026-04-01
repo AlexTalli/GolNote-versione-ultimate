@@ -1,5 +1,34 @@
-import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+
+let Notifications: any = null;
+let notificationsLoaded = false;
+
+const loadNotifications = async (): Promise<boolean> => {
+  if (notificationsLoaded) return Notifications !== null;
+  
+  // Skip on Android (Expo Go limitation)
+  if (Platform.OS === 'android') {
+    console.log('[NOTIF] Notifications disabled on Android (Expo Go limitation)');
+    notificationsLoaded = true;
+    return false;
+  }
+  
+  try {
+    Notifications = await import('expo-notifications').then(m => m.default || m);
+    notificationsLoaded = true;
+    return true;
+  } catch (e) {
+    console.warn('[NOTIF] expo-notifications not available (remote notifications disabled on Expo Go):', e);
+    notificationsLoaded = true;
+    return false;
+  }
+};
+
+const isNotificationsAvailable = async (): Promise<boolean> => {
+  if (notificationsLoaded) return Notifications !== null;
+  return await loadNotifications();
+};
 
 const WEEKLY_ID_KEY = 'weeklyFinesReminderNotificationId';
 
@@ -10,6 +39,8 @@ const fineDueKey = (fineId: number) => `fineDueNotif:${fineId}`;
 
 // Richiede il permesso per le notifiche se non già concesso
 export async function ensureNotificationPermission(): Promise<boolean> {
+  if (!(await isNotificationsAvailable())) return false;
+
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
 
@@ -31,6 +62,8 @@ export async function isWeeklyFinesReminderEnabled(): Promise<boolean> {
 
 /** Disattiva il promemoria settimanale (se attivo) */
 export async function disableWeeklyFinesReminder(): Promise<boolean> {
+  if (!(await isNotificationsAvailable())) return true;
+
   const id = await AsyncStorage.getItem(WEEKLY_ID_KEY);
   if (!id) return true;
 
@@ -50,6 +83,11 @@ export async function disableWeeklyFinesReminder(): Promise<boolean> {
  * Se già attivo, NON crea duplicati.
  */
 export async function scheduleWeeklyFinesReminder(): Promise<boolean> {
+  if (!(await isNotificationsAvailable())) {
+    console.log('[NOTIF] Notifications not available, skipping weekly reminder');
+    return false;
+  }
+
   const granted = await ensureNotificationPermission();
   if (!granted) return false;
 
@@ -98,6 +136,8 @@ export async function scheduleFineDueNotification(
   teamName?: string,
   fineId?: number
 ): Promise<string | false> {
+  if (!(await isNotificationsAvailable())) return false;
+
   const granted = await ensureNotificationPermission();
   if (!granted) return false;
 
@@ -155,6 +195,8 @@ export async function scheduleFineDueNotification(
 /* ========== NOTIFICA IMMEDIATA NUOVA MULTA (PLAYER) ========== */
 
 export async function scheduleFineAssignedNotification(): Promise<boolean> {
+  if (!(await isNotificationsAvailable())) return false;
+
   const granted = await ensureNotificationPermission();
   if (!granted) {
     console.log('[NOTIF] Permission not granted for fine assigned notification');
@@ -202,6 +244,11 @@ export async function cancelFineDueNotificationByFineId(fineId: number): Promise
 
 // Pianifica una notifica di test dopo 10 secondi
 export async function scheduleFineDueNotificationDemo() {
+  if (!(await isNotificationsAvailable())) {
+    console.log('[NOTIF] Notifications not available, skipping demo');
+    return false;
+  }
+
   const granted = await ensureNotificationPermission();
   if (!granted) return false;
 
@@ -219,5 +266,54 @@ export async function scheduleFineDueNotificationDemo() {
   });
 
   console.log('[NOTIF-DEMO] Scheduled with id:', id);
+  return true;
+}
+
+/* ========== NOTIFICA MESSAGGIO CHAT ========== */
+
+/**
+ * Invia notifica immediata di nuovo messaggio chat.
+ * userRole: 'mister' o 'player'
+ * playerName: nome del giocatore che ha mandato il messaggio
+ * teamName: nome della squadra
+ */
+export async function sendChatMessageNotification(
+  userRole: 'mister' | 'player',
+  playerName: string,
+  teamName: string
+): Promise<boolean> {
+  if (!(await isNotificationsAvailable())) return false;
+
+  const granted = await ensureNotificationPermission();
+  if (!granted) {
+    console.log('[NOTIF] Permission not granted for chat message notification');
+    return false;
+  }
+
+  let title = '';
+  let body = '';
+
+  if (userRole === 'mister') {
+    title = '💬 Nuovo messaggio';
+    body = `${playerName} (${teamName}) ti ha inviato un messaggio`;
+  } else {
+    title = '💬 Nuovo messaggio';
+    body = `Il mister (${teamName}) ti ha inviato un messaggio`;
+  }
+
+  const notifId = await Notifications.scheduleNotificationAsync({
+    content: {
+      title,
+      body,
+      data: { type: 'chat_message', playerName, teamName, userRole },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: 1,
+      repeats: false,
+    },
+  });
+
+  console.log('[NOTIF] Chat message notification scheduled with id:', notifId);
   return true;
 }

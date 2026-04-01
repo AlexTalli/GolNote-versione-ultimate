@@ -102,3 +102,63 @@ export const usePublicTeam = (teamId?: number) => {
 
   return { players, fines, loading, error, refresh: load };
 };
+
+/** --------- Ricerca squadre per mister delegati (con debounce) --------- */
+export const useMisterTeamSearch = () => {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<(Team & { hasMisterPassword: boolean })[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  const lastReqId = useRef(0);
+  const lastNormQ = useRef<string>('');
+
+  const search = useCallback(async (raw: string) => {
+    const norm = raw.trim().toLowerCase();
+    if (norm.length < 2) {
+      setResults([]);
+      setError(null);
+      return;
+    }
+
+    if (norm === lastNormQ.current) return;
+    lastNormQ.current = norm;
+
+    const reqId = ++lastReqId.current;
+    setLoading(true);
+    setError(null);
+    try {
+      const rows = await teamsDB.searchByNameForMister(norm);
+      if (reqId !== lastReqId.current) return;
+
+      const mapped = (rows ?? []).map((t) => ({
+        ...t,
+        hasMisterPassword: !!t.mister_password,
+      }));
+      setResults(mapped);
+    } catch (e) {
+      if (reqId !== lastReqId.current) return;
+      setError(e);
+      setResults([]);
+    } finally {
+      if (reqId === lastReqId.current) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => search(query), 250);
+    return () => clearTimeout(t);
+  }, [query, search]);
+
+  const manualSearch = useCallback(() => search(query), [query, search]);
+
+  return { query, setQuery, results, loading, error, manualSearch };
+};
+
+/** --------- Verifica password mister delegato --------- */
+export const useCheckMisterPassword = () => {
+  const verify = useCallback(async (teamId: number, plainPassword: string) => {
+    return await teamsDB.joinAsDelegatedMister(teamId, plainPassword);
+  }, []);
+  return { verify };
+};

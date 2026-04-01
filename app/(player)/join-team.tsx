@@ -22,7 +22,7 @@ import { playersDB, usersDB, type Player } from '@/database/database.supabase';
 // Schermata per giocatori: cerca e unisciti a una squadra
 export default function JoinTeamScreen() {
   const router = useRouter();
-  const { user, setUser } = useAuth();
+  const { user, setUser, logout } = useAuth();
   const { setPlayerIdentity, setRole } = useRole();
   const { query, setQuery, results, loading } = useTeamSearch(); // Hook per ricerca squadre
   const { verify } = useCheckTeamPassword(); // Hook per verifica password
@@ -186,6 +186,19 @@ export default function JoinTeamScreen() {
     );
   };
 
+  const handleBackToRoleSelection = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error('Error during logout:', error);
+    } finally {
+      setRole(null);
+      setPlayerIdentity({ playerId: null });
+      router.dismissAll();
+      router.replace('/');
+    }
+  };
+
   return (
     <SafeAreaView style={s.container}>
       {/* Header */}
@@ -265,7 +278,7 @@ export default function JoinTeamScreen() {
       )}
 
       {/* Pulsante back alla selezione ruolo */}
-      <TouchableOpacity onPress={() => router.replace('/')}>
+      <TouchableOpacity onPress={handleBackToRoleSelection}>
         <Text style={s.backText}>← Torna alla selezione ruolo</Text>
       </TouchableOpacity>
 

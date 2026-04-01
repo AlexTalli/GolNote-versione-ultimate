@@ -11,7 +11,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import { X } from 'lucide-react-native';
+import { X, ArrowRight } from 'lucide-react-native';
 import { useDatabase, usePlayers } from '@/hooks/useDatabase';
 
 /* ========== HELPERS PER DATE ========== */
@@ -202,7 +202,13 @@ export function AddFineModal({ visible, onClose, onSave, presetPlayerId }: AddFi
           <ScrollView style={styles.form} showsVerticalScrollIndicator={false}>
             {/* Campo tipo multa */}
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Tipo Multa</Text>
+              <View style={styles.labelRow}>
+                <Text style={styles.label}>Tipo Multa</Text>
+                <View style={styles.scrollHint}>
+                  <Text style={styles.scrollHintText}>Scorri per vedere altri tipi</Text>
+                  <ArrowRight size={12} color="#6b7280" />
+                </View>
+              </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.typeScroll}>
                 {fineTypes.map((type) => (
                   <TouchableOpacity
@@ -318,6 +324,9 @@ const styles = StyleSheet.create({
   // Gruppo di input con label
   inputGroup: { marginBottom: 16 },
   label: { fontSize: 16, fontWeight: '600', color: '#374151', marginBottom: 8 },
+  labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  scrollHint: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 },
+  scrollHintText: { fontSize: 12, color: '#6b7280', fontWeight: '600' },
 
   // Stile base per input di testo
   input: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 8, padding: 12, fontSize: 16, backgroundColor: '#f9fafb' },

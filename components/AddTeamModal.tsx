@@ -11,9 +11,12 @@ import {
   ScrollView,
   Image,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { X, Eye, EyeOff, Shield, Plus, ChevronDown } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import { uploadTeamLogo } from '@/database/database.supabase';
 
 /* ========== INTERFACCE ========== */
 
@@ -29,6 +32,7 @@ interface AddTeamModalProps {
     color?: string;
     logo_uri?: string;
     password?: string;
+    mister_password?: string;
   }) => Promise<void> | void;
   editTeam?: {
     id: number;
@@ -96,12 +100,20 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
   const [category, setCategory] = useState('');
   const [selectedColor, setSelectedColor] = useState(baseColors[4]); // default verde
   const [logoUri, setLogoUri] = useState<string | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
-  // Stati per password opzionale
-  const [password, setPassword] = useState('');
-  const [password2, setPassword2] = useState('');
-  const [showPwd, setShowPwd] = useState(false);
-  const [showPwd2, setShowPwd2] = useState(false);
+  // Password per giocatori
+  const [playerPassword, setPlayerPassword] = useState('');
+  const [playerPassword2, setPlayerPassword2] = useState('');
+  const [showPlayerPwd, setShowPlayerPwd] = useState(false);
+  const [showPlayerPwd2, setShowPlayerPwd2] = useState(false);
+
+  // Password per mister delegati
+  const [misterPassword, setMisterPassword] = useState('');
+  const [misterPassword2, setMisterPassword2] = useState('');
+  const [showMisterPwd, setShowMisterPwd] = useState(false);
+  const [showMisterPwd2, setShowMisterPwd2] = useState(false);
 
   /* Stato per mostrare/nascondere palette colori estesa */
   const [customVisible, setCustomVisible] = useState(false);
@@ -115,9 +127,13 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
       setSeasonYear(editTeam.season_year ?? '');
       setCategory(editTeam.category ?? '');
       setSelectedColor(editTeam.color);
-      setLogoUri(editTeam.logo_uri ?? null);
-      setPassword('');
-      setPassword2('');
+      setLogoUri(null);
+      setLogoUrl(editTeam.logo_uri ?? null);
+      setPlayerPassword('');
+      setPlayerPassword2('');
+      setMisterPassword('');
+      setMisterPassword2('');
+      setUploading(false);
     } else if (visible) {
       setName('');
       setDescription('');
@@ -125,25 +141,36 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
       setCategory('');
       setSelectedColor(baseColors[4]);
       setLogoUri(null);
-      setPassword('');
-      setPassword2('');
+      setLogoUrl(null);
+      setPlayerPassword('');
+      setPlayerPassword2('');
+      setMisterPassword('');
+      setMisterPassword2('');
+      setUploading(false);
     }
   }, [visible, editTeam]);
 
   /* ========== VALIDAZIONI ========== */
 
-  // Validazioni password
-  const pwdTooShort = password.length > 0 && password.length < 6;
-  const pwdMismatch = password.length > 0 && password !== password2;
+  // Validazioni password giocatori
+  const playerPwdTooShort = playerPassword.length > 0 && playerPassword.length < 6;
+  const playerPwdMismatch = playerPassword.length > 0 && playerPassword !== playerPassword2;
+
+  // Validazioni password mister
+  const misterPwdTooShort = misterPassword.length > 0 && misterPassword.length < 6;
+  const misterPwdMismatch = misterPassword.length > 0 && misterPassword !== misterPassword2;
 
   // Controllo se il form è valido per salvare
   const canSave = useMemo(() => {
     if (!name.trim()) return false;
     if (!seasonYear.trim()) return false;
     if (!category.trim()) return false;
-    if (pwdTooShort || pwdMismatch) return false;
+    if (uploading) return false;
+    if (logoUri && !logoUrl) return false;
+    if (playerPwdTooShort || playerPwdMismatch) return false;
+    if (misterPwdTooShort || misterPwdMismatch) return false;
     return true;
-  }, [name, seasonYear, category, pwdTooShort, pwdMismatch]);
+  }, [name, seasonYear, category, uploading, logoUri, logoUrl, playerPwdTooShort, playerPwdMismatch, misterPwdTooShort, misterPwdMismatch]);
 
   /* ========== GESTORI EVENTI ========== */
 
@@ -160,6 +187,7 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
       color: string;
       logo_uri?: string;
       password?: string;
+      mister_password?: string;
     } = {
       name: name.trim(),
       description: description.trim(),
@@ -168,9 +196,14 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
       color: selectedColor,
     };
 
-    if (logoUri) payload.logo_uri = logoUri;
+    // Use uploaded URL instead of local path
+    if (logoUrl) payload.logo_uri = logoUrl;
 
-    if (password.trim()) payload.password = password.trim();
+    // Password per giocatori
+    if (playerPassword.trim()) payload.password = playerPassword.trim();
+
+    // Password per mister delegati
+    if (misterPassword.trim()) payload.mister_password = misterPassword.trim();
 
     onSave(payload);
     resetForm();
@@ -184,10 +217,15 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
     setCategory('');
     setSelectedColor(baseColors[4]);
     setLogoUri(null);
-    setPassword('');
-    setPassword2('');
-    setShowPwd(false);
-    setShowPwd2(false);
+    setLogoUrl(null);
+    setPlayerPassword('');
+    setPlayerPassword2('');
+    setShowPlayerPwd(false);
+    setShowPlayerPwd2(false);
+    setMisterPassword('');
+    setMisterPassword2('');
+    setShowMisterPwd(false);
+    setShowMisterPwd2(false);
     setCustomVisible(false);
     setOpenSelect(null);
   };
@@ -213,12 +251,51 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
       if (!result.canceled) {
         const selected = result.assets?.[0];
         if (selected?.uri) {
+          setLogoUrl(null);
           setLogoUri(selected.uri);
+          const normalized = await manipulateAsync(
+            selected.uri,
+            [{ resize: { width: 1080 } }],
+            {
+              compress: 0.8,
+              format: SaveFormat.JPEG,
+            }
+          );
+
+          // Upload immediately using normalized JPEG
+          await uploadLogo(normalized.uri, 'image/jpeg');
         }
       }
     } catch (error) {
       console.error('Errore selezione logo:', error);
       Alert.alert('Errore', 'Impossibile selezionare il logo dalla galleria foto.');
+    }
+  };
+
+  const uploadLogo = async (fileUri: string, contentType = 'image/jpeg') => {
+    try {
+      setUploading(true);
+      // Generate a unique filename
+      const timestamp = Date.now();
+      const fileExtension = contentType.includes('png') ? 'png' : 'jpg';
+      const fileName = `logo-${timestamp}.${fileExtension}`;
+      
+      // Use a temporary teamId (0) for new teams, actual teamId for edits
+      const tempTeamId = editTeam?.id || 0;
+      
+      const publicUrl = await uploadTeamLogo(tempTeamId, fileUri, fileName, contentType);
+      
+      if (publicUrl) {
+        setLogoUrl(publicUrl);
+        Alert.alert('Successo', 'Logo caricato correttamente');
+      } else {
+        Alert.alert('Errore', 'Errore nel caricamento del logo');
+      }
+    } catch (error) {
+      console.error('Errore upload logo:', error);
+      Alert.alert('Errore', 'Errore nel caricamento del logo');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -377,22 +454,37 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
 
               <View style={styles.logoRow}>
                 <View style={styles.logoPreviewWrap}>
-                  {logoUri ? (
-                    <Image source={{ uri: logoUri }} style={styles.logoPreviewLarge} />
+                  {(logoUri || logoUrl) ? (
+                    <Image source={{ uri: (logoUri || logoUrl) as string }} style={styles.logoPreviewLarge} />
                   ) : (
                     <View style={styles.logoPreviewPlaceholder} />
+                  )}
+                  {uploading && (
+                    <View style={[styles.logoPreviewLarge, { position: 'absolute', backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' }]}>
+                      <ActivityIndicator size="large" color="#ffffff" />
+                      <Text style={{ color: '#ffffff', marginTop: 8 }}>Caricamento...</Text>
+                    </View>
                   )}
                 </View>
 
                 <View style={styles.logoActions}>
-                  <TouchableOpacity style={styles.logoBtn} onPress={handlePickLogo}>
-                    <Text style={styles.logoBtnText}>Scegli da galleria</Text>
+                  <TouchableOpacity 
+                    style={[styles.logoBtn, uploading && { opacity: 0.5 }]} 
+                    onPress={handlePickLogo}
+                    disabled={uploading}
+                  >
+                    <Text style={styles.logoBtnText}>
+                      {uploading ? 'Caricamento...' : 'Scegli da galleria'}
+                    </Text>
                   </TouchableOpacity>
 
-                  {logoUri && (
+                  {(logoUri || logoUrl) && !uploading && (
                     <TouchableOpacity
                       style={[styles.logoBtn, styles.logoBtnDanger]}
-                      onPress={() => setLogoUri(null)}
+                      onPress={() => {
+                        setLogoUri(null);
+                        setLogoUrl(null);
+                      }}
                     >
                       <Text style={[styles.logoBtnText, styles.logoBtnDangerText]}>Rimuovi logo</Text>
                     </TouchableOpacity>
@@ -400,7 +492,7 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
                 </View>
               </View>
 
-              {!logoUri && (
+              {!logoUri && !logoUrl && (
                 <>
                   <View style={styles.labelRow}>
                     <Text style={styles.label}>Colore Squadra</Text>
@@ -470,50 +562,99 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
               )}
             </View>
 
-            {/* Campo password opzionale */}
+            {/* Campo password per giocatori (opzionale) */}
             <View style={styles.inputGroup}>
               <View style={styles.labelRow}>
-                <Text style={styles.label}>Password di accesso (opzionale)</Text>
-                <Text style={styles.hint}>min 6 caratteri</Text>
+                <Text style={styles.label}>Password Squadra (opzionale)</Text>
+                <Text style={styles.hint}>per giocatori - min 6 caratteri</Text>
               </View>
               <View style={styles.pwdRow}>
                 <TextInput
                   style={[styles.input, { flex: 1 }]}
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="Imposta password squadra"
-                  secureTextEntry={!showPwd}
+                  value={playerPassword}
+                  onChangeText={setPlayerPassword}
+                  placeholder="Password per accesso giocatori"
+                  secureTextEntry={!showPlayerPwd}
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
-                <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPwd((v) => !v)}>
-                  {showPwd ? <EyeOff size={20} color="#6b7280" /> : <Eye size={20} color="#6b7280" />}
+                <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPlayerPwd((v) => !v)}>
+                  {showPlayerPwd ? <EyeOff size={20} color="#6b7280" /> : <Eye size={20} color="#6b7280" />}
                 </TouchableOpacity>
               </View>
-              {pwdTooShort && (
+              {playerPwdTooShort && (
                 <Text style={styles.errorText}>La password deve avere almeno 6 caratteri.</Text>
               )}
             </View>
 
-            {/* Campo conferma password (solo se password inserita) */}
-            {password.length > 0 && (
+            {/* Conferma password giocatori */}
+            {playerPassword.length > 0 && (
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Conferma password</Text>
+                <Text style={styles.label}>Conferma password squadra</Text>
                 <View style={styles.pwdRow}>
                   <TextInput
                     style={[styles.input, { flex: 1 }]}
-                    value={password2}
-                    onChangeText={setPassword2}
+                    value={playerPassword2}
+                    onChangeText={setPlayerPassword2}
                     placeholder="Ripeti password"
-                    secureTextEntry={!showPwd2}
+                    secureTextEntry={!showPlayerPwd2}
                     autoCapitalize="none"
                     autoCorrect={false}
                   />
-                  <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPwd2((v) => !v)}>
-                    {showPwd2 ? <EyeOff size={20} color="#6b7280" /> : <Eye size={20} color="#6b7280" />}
+                  <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPlayerPwd2((v) => !v)}>
+                    {showPlayerPwd2 ? <EyeOff size={20} color="#6b7280" /> : <Eye size={20} color="#6b7280" />}
                   </TouchableOpacity>
                 </View>
-                {pwdMismatch && (
+                {playerPwdMismatch && (
+                  <Text style={styles.errorText}>Le password non coincidono.</Text>
+                )}
+              </View>
+            )}
+
+            {/* Campo password per mister delegati (opzionale) */}
+            <View style={styles.inputGroup}>
+              <View style={styles.labelRow}>
+                <Text style={styles.label}>Delega Mister (opzionale)</Text>
+                <Text style={styles.hint}>per mister secondi - min 6 caratteri</Text>
+              </View>
+              <View style={styles.pwdRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  value={misterPassword}
+                  onChangeText={setMisterPassword}
+                  placeholder="Password per mister delegati"
+                  secureTextEntry={!showMisterPwd}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowMisterPwd((v) => !v)}>
+                  {showMisterPwd ? <EyeOff size={20} color="#6b7280" /> : <Eye size={20} color="#6b7280" />}
+                </TouchableOpacity>
+              </View>
+              {misterPwdTooShort && (
+                <Text style={styles.errorText}>La password deve avere almeno 6 caratteri.</Text>
+              )}
+            </View>
+
+            {/* Conferma password mister */}
+            {misterPassword.length > 0 && (
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Conferma password delega</Text>
+                <View style={styles.pwdRow}>
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    value={misterPassword2}
+                    onChangeText={setMisterPassword2}
+                    placeholder="Ripeti password"
+                    secureTextEntry={!showMisterPwd2}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowMisterPwd2((v) => !v)}>
+                    {showMisterPwd2 ? <EyeOff size={20} color="#6b7280" /> : <Eye size={20} color="#6b7280" />}
+                  </TouchableOpacity>
+                </View>
+                {misterPwdMismatch && (
                   <Text style={styles.errorText}>Le password non coincidono.</Text>
                 )}
               </View>

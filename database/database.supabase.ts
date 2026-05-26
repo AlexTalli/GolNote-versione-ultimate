@@ -65,6 +65,7 @@ export type Team = {
   id: number;
   name: string;
   description?: string | null;
+  sport?: string | null;
   season_year?: string | null;
   category?: string | null;
   color: string;
@@ -401,6 +402,7 @@ export const teamsDB = {
   async teamNameExists(
     ownerId: string,
     name: string,
+    sport?: string,
     seasonYear?: string,
     category?: string,
     excludeTeamId?: number
@@ -413,6 +415,10 @@ export const teamsDB = {
 
     if (seasonYear?.trim()) {
       query = query.eq('season_year', seasonYear.trim());
+    }
+
+    if (sport?.trim()) {
+      query = query.eq('sport', sport.trim().toLowerCase());
     }
 
     if (category?.trim()) {
@@ -438,6 +444,7 @@ export const teamsDB = {
     const nameExists = await this.teamNameExists(
       team.owner_user_id,
       team.name,
+      team.sport ?? undefined,
       team.season_year ?? undefined,
       team.category ?? undefined
     );
@@ -541,6 +548,57 @@ export const teamsDB = {
 
     if (error) {
       console.error('[teamsDB] updateMisterPassword error:', error);
+      return false;
+    }
+
+    return true;
+  },
+
+  async getTeamChatNickname(teamId: number, userId: string): Promise<string> {
+    const { data, error } = await supabase
+      .from('team_chat_nicknames')
+      .select('nickname')
+      .eq('team_id', teamId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[teamsDB] getTeamChatNickname error:', error);
+      return '';
+    }
+
+    return String((data as any)?.nickname || '');
+  },
+
+  async setTeamChatNickname(teamId: number, userId: string, nickname: string): Promise<boolean> {
+    const normalized = nickname.trim();
+
+    if (!normalized) {
+      const { error } = await supabase
+        .from('team_chat_nicknames')
+        .delete()
+        .eq('team_id', teamId)
+        .eq('user_id', userId);
+
+      if (error) {
+        console.error('[teamsDB] setTeamChatNickname delete error:', error);
+        return false;
+      }
+
+      return true;
+    }
+
+    const { error } = await supabase
+      .from('team_chat_nicknames')
+      .upsert({
+        team_id: teamId,
+        user_id: userId,
+        nickname: normalized,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'team_id,user_id' });
+
+    if (error) {
+      console.error('[teamsDB] setTeamChatNickname upsert error:', error);
       return false;
     }
 
@@ -1312,6 +1370,83 @@ export const statsDB = {
  * ========================= */
 
 export const chatsDB = {
+  /**
+   * Get sender labels for a specific chat (owner, delegated misters, player)
+   */
+  async getSenderLabels(chatId: number): Promise<Record<string, string>> {
+    const { data, error } = await supabase.rpc('get_chat_sender_labels', {
+      p_chat_id: chatId,
+    });
+
+    if (error) {
+      console.error('[chatsDB.getSenderLabels] error:', error);
+      return {};
+    }
+
+    const labels: Record<string, string> = {};
+    (data || []).forEach((row: any) => {
+      if (row?.sender_id && row?.sender_label) {
+        labels[String(row.sender_id)] = String(row.sender_label);
+      }
+    });
+
+    return labels;
+  },
+
+  async getTeamChatNickname(teamId: number, userId: string): Promise<string> {
+    const { data, error } = await supabase
+      .from('team_chat_nicknames')
+      .select('nickname')
+      .eq('team_id', teamId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[chatsDB.getTeamChatNickname] error:', error);
+      return '';
+    }
+
+    return String((data as any)?.nickname || '');
+  },
+
+  async setTeamChatNickname(teamId: number, userId: string, nickname: string): Promise<boolean> {
+    const normalized = nickname.trim();
+
+    if (!normalized) {
+      const { error } = await supabase
+        .from('team_chat_nicknames')
+        .delete()
+        .eq('team_id', teamId)
+        .eq('user_id', userId);
+
+      if (error) {
+        console.error('[chatsDB.setTeamChatNickname] delete error:', error);
+        return false;
+      }
+
+      return true;
+    }
+
+    const { error } = await supabase
+      .from('team_chat_nicknames')
+      .upsert(
+        {
+          team_id: teamId,
+          user_id: userId,
+          nickname: normalized,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'team_id,user_id' }
+      );
+
+    if (error) {
+      console.error('[chatsDB.setTeamChatNickname] upsert error:', error);
+      return false;
+    }
+
+    return true;
+  },
+
   /**
    * Get all chats for a team (mister view)
    */

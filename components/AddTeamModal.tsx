@@ -17,6 +17,7 @@ import { X, Eye, EyeOff, Shield, Plus, ChevronDown } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { uploadTeamLogo } from '@/database/database.supabase';
+import { SPORTS, SPORT_LABELS, normalizeSport, type SportName } from '@/utils/sports';
 
 /* ========== INTERFACCE ========== */
 
@@ -27,6 +28,7 @@ interface AddTeamModalProps {
   onSave: (teamData: {
     name?: string;
     description?: string;
+    sport?: SportName;
     season_year?: string;
     category?: string;
     color?: string;
@@ -38,6 +40,7 @@ interface AddTeamModalProps {
     id: number;
     name: string;
     description?: string | null;
+    sport?: string | null;
     season_year?: string | null;
     category?: string | null;
     color: string;
@@ -78,16 +81,6 @@ const buildSeasonYearOptions = (fromYear: number, toYear: number) => {
 
 const seasonYearOptions = buildSeasonYearOptions(2020, new Date().getFullYear() + 6);
 
-const categoryOptions = [
-  'Prima squadra',
-  'U19 (Juniores)',
-  'U17 (Allievi 1° anno)',
-  'U16 (Allievi 2° anno)',
-  'U15 (Giovanissimi 2° anno)',
-  'U14 (Giovanissimi 1° anno)',
-  'Amatoriale',
-];
-
 /* ========== COMPONENTE ========== */
 
 export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModalProps) {
@@ -96,6 +89,7 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
   // Stati per i campi del form
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [sport, setSport] = useState<SportName>('calcio');
   const [seasonYear, setSeasonYear] = useState('');
   const [category, setCategory] = useState('');
   const [selectedColor, setSelectedColor] = useState(baseColors[4]); // default verde
@@ -117,13 +111,14 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
 
   /* Stato per mostrare/nascondere palette colori estesa */
   const [customVisible, setCustomVisible] = useState(false);
-  const [openSelect, setOpenSelect] = useState<'season' | 'category' | null>(null);
+  const [openSelect, setOpenSelect] = useState<'sport' | 'season' | null>(null);
 
   // Carica i dati della squadra quando il modal si apre con editTeam
   useEffect(() => {
     if (visible && editTeam) {
       setName(editTeam.name);
       setDescription(editTeam.description ?? '');
+      setSport(normalizeSport(editTeam.sport));
       setSeasonYear(editTeam.season_year ?? '');
       setCategory(editTeam.category ?? '');
       setSelectedColor(editTeam.color);
@@ -137,6 +132,7 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
     } else if (visible) {
       setName('');
       setDescription('');
+      setSport('calcio');
       setSeasonYear('');
       setCategory('');
       setSelectedColor(baseColors[4]);
@@ -163,6 +159,7 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
   // Controllo se il form è valido per salvare
   const canSave = useMemo(() => {
     if (!name.trim()) return false;
+    if (!sport.trim()) return false;
     if (!seasonYear.trim()) return false;
     if (!category.trim()) return false;
     if (uploading) return false;
@@ -170,7 +167,7 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
     if (playerPwdTooShort || playerPwdMismatch) return false;
     if (misterPwdTooShort || misterPwdMismatch) return false;
     return true;
-  }, [name, seasonYear, category, uploading, logoUri, logoUrl, playerPwdTooShort, playerPwdMismatch, misterPwdTooShort, misterPwdMismatch]);
+  }, [name, sport, seasonYear, category, uploading, logoUri, logoUrl, playerPwdTooShort, playerPwdMismatch, misterPwdTooShort, misterPwdMismatch]);
 
   /* ========== GESTORI EVENTI ========== */
 
@@ -182,6 +179,7 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
     const payload: {
       name: string;
       description: string;
+      sport: SportName;
       season_year: string;
       category: string;
       color: string;
@@ -191,6 +189,7 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
     } = {
       name: name.trim(),
       description: description.trim(),
+      sport,
       season_year: seasonYear.trim(),
       category: category.trim(),
       color: selectedColor,
@@ -213,6 +212,7 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
   const resetForm = () => {
     setName('');
     setDescription('');
+    setSport('calcio');
     setSeasonYear('');
     setCategory('');
     setSelectedColor(baseColors[4]);
@@ -359,7 +359,49 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Anno calcistico</Text>
+              <Text style={styles.label}>Sport</Text>
+              <TouchableOpacity
+                style={styles.selectInput}
+                onPress={() => setOpenSelect((v) => (v === 'sport' ? null : 'sport'))}
+                activeOpacity={0.8}
+              >
+                <View style={styles.selectRow}>
+                  <Text style={styles.selectValue}>{SPORT_LABELS[sport]}</Text>
+                  <ChevronDown
+                    size={18}
+                    color="#6b7280"
+                    style={openSelect === 'sport' ? styles.chevronOpen : undefined}
+                  />
+                </View>
+              </TouchableOpacity>
+
+              {openSelect === 'sport' && (
+                <View style={styles.optionsContainer}>
+                  {SPORTS.map((option) => (
+                    <TouchableOpacity
+                      key={option}
+                      style={styles.optionItem}
+                      onPress={() => {
+                        setSport(option);
+                        setOpenSelect(null);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.optionText,
+                          sport === option && styles.optionTextSelected,
+                        ]}
+                      >
+                        {SPORT_LABELS[option]}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Anno Sportivo</Text>
               <TouchableOpacity
                 style={styles.selectInput}
                 onPress={() => setOpenSelect((v) => (v === 'season' ? null : 'season'))}
@@ -367,7 +409,7 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
               >
                 <View style={styles.selectRow}>
                   <Text style={seasonYear ? styles.selectValue : styles.selectPlaceholder}>
-                    {seasonYear || 'Seleziona anno calcistico'}
+                    {seasonYear || 'Seleziona anno sportivo'}
                   </Text>
                   <ChevronDown
                     size={18}
@@ -406,46 +448,13 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
 
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Categoria</Text>
-              <TouchableOpacity
-                style={styles.selectInput}
-                onPress={() => setOpenSelect((v) => (v === 'category' ? null : 'category'))}
-                activeOpacity={0.8}
-              >
-                <View style={styles.selectRow}>
-                  <Text style={category ? styles.selectValue : styles.selectPlaceholder}>
-                    {category || 'Seleziona categoria'}
-                  </Text>
-                  <ChevronDown
-                    size={18}
-                    color="#6b7280"
-                    style={openSelect === 'category' ? styles.chevronOpen : undefined}
-                  />
-                </View>
-              </TouchableOpacity>
-
-              {openSelect === 'category' && (
-                <View style={styles.optionsContainer}>
-                  {categoryOptions.map((option) => (
-                    <TouchableOpacity
-                      key={option}
-                      style={styles.optionItem}
-                      onPress={() => {
-                        setCategory(option);
-                        setOpenSelect(null);
-                      }}
-                    >
-                      <Text
-                        style={[
-                          styles.optionText,
-                          category === option && styles.optionTextSelected,
-                        ]}
-                      >
-                        {option}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
+              <TextInput
+                style={styles.input}
+                value={category}
+                onChangeText={setCategory}
+                placeholder="Es. Prima squadra, U16, Amatoriale"
+                autoCapitalize="words"
+              />
             </View>
 
             {/* Sezione Logo e Colore (mutualmente esclusivi) */}
@@ -566,7 +575,6 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
             <View style={styles.inputGroup}>
               <View style={styles.labelRow}>
                 <Text style={styles.label}>Password Squadra (opzionale)</Text>
-                <Text style={styles.hint}>per giocatori - min 6 caratteri</Text>
               </View>
               <View style={styles.pwdRow}>
                 <TextInput
@@ -614,8 +622,8 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
             {/* Campo password per mister delegati (opzionale) */}
             <View style={styles.inputGroup}>
               <View style={styles.labelRow}>
-                <Text style={styles.label}>Delega Mister (opzionale)</Text>
-                <Text style={styles.hint}>per mister secondi - min 6 caratteri</Text>
+                <Text style={styles.label}>Password Mister (opzionale)</Text>
+                
               </View>
               <View style={styles.pwdRow}>
                 <TextInput

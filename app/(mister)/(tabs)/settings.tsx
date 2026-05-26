@@ -465,7 +465,8 @@ export default function MisterSettings() {
                 • Aggiorna il calendario delle presenze agli allenamenti{"\n"}
                 • Esporta in Excel per condividere il calendario o il resoconto delle multe{"\n"}
                 • Attiva promemoria settimanali{"\n"}
-                • Notifiche sulle scadenze multe (il giorno prima della scadenza)
+                • Notifiche sulle scadenze multe (il giorno prima della scadenza) {"\n"}
+                • Chatta con i tuoi giocatori
               </Text>
             </View>
           </TouchableOpacity>

@@ -133,6 +133,7 @@ export default function TeamActionsScreen() {
           </View>
           <ChevronRight size={20} color="#9ca3af" />
         </TouchableOpacity>
+
       </View>
     </SafeAreaView>
   );

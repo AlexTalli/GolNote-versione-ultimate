@@ -6,17 +6,19 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  Modal,
   FlatList,
   TextInput,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { ArrowLeft, Send } from 'lucide-react-native';
+import { ArrowLeft, Send, PencilLine, MessageCircle } from 'lucide-react-native';
 import { usePlayerChat, useChatMessages } from '@/hooks/useDatabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { chatsDB } from '@/database/database.supabase';
 
 export default function MisterChatScreen() {
   const insets = useSafeAreaInsets();
@@ -40,6 +42,10 @@ export default function MisterChatScreen() {
   const [messageInput, setMessageInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [senderLabels, setSenderLabels] = useState<Record<string, string>>({});
+  const [chatNickname, setChatNickname] = useState('');
+  const [nicknameModalVisible, setNicknameModalVisible] = useState(false);
+  const [savingNickname, setSavingNickname] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   const { messages, loading: messagesLoading, sendMessage, deleteMessage } = useChatMessages(
     chat?.id || 0,
@@ -61,63 +67,66 @@ export default function MisterChatScreen() {
     }
   }, [messages]);
 
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   // Load sender labels for this chat: 1° Mister, 2° Mister, ... , Giocatore
   useEffect(() => {
     (async () => {
       if (!(chat?.id && chat.id > 0)) {
         setSenderLabels({});
+        setChatNickname('');
         return;
       }
 
       try {
-        const labels: Record<string, string> = {};
-
-        const { data: chatRow } = await supabase
-          .from('chats')
-          .select('team_id, teams(owner_user_id)')
-          .eq('id', chat.id)
-          .single();
-
-        const teamIdForChat = Number((chatRow as any)?.team_id || 0);
-        const ownerUserId = (chatRow as any)?.teams?.owner_user_id as string | undefined;
-
-        const orderedMisterIds: string[] = [];
-        if (ownerUserId) orderedMisterIds.push(ownerUserId);
-
-        if (teamIdForChat > 0) {
-          const { data: delegatedRows } = await supabase
-            .from('team_misters')
-            .select('user_id, created_at')
-            .eq('team_id', teamIdForChat)
-            .order('created_at', { ascending: true });
-
-          (delegatedRows || []).forEach((r: any) => {
-            const uid = String(r.user_id || '');
-            if (uid && !orderedMisterIds.includes(uid)) {
-              orderedMisterIds.push(uid);
-            }
-          });
-        }
-
-        orderedMisterIds.forEach((uid, idx) => {
-          labels[uid] = `${idx + 1}° Mister`;
-        });
-
-        // Tutti i sender non-mister in questa chat sono il giocatore
-        const misterSet = new Set(orderedMisterIds);
-        messages.forEach((m) => {
-          if (!misterSet.has(m.sender_id)) {
-            labels[m.sender_id] = 'Giocatore';
-          }
-        });
-
+        const labels = await chatsDB.getSenderLabels(chat.id);
         setSenderLabels(labels);
+
+        if (user?.id) {
+          const currentNickname = await chatsDB.getTeamChatNickname(teamId, user.id);
+          setChatNickname(currentNickname);
+        }
       } catch (e) {
         console.error('[MisterChatScreen] load sender labels error:', e);
         setSenderLabels({});
       }
     })();
-  }, [chat?.id, messages]);
+  }, [chat?.id, teamId, user?.id]);
+
+  const openNicknameModal = () => {
+    setNicknameModalVisible(true);
+  };
+
+  const closeNicknameModal = () => {
+    setNicknameModalVisible(false);
+  };
+
+  const saveNickname = async () => {
+    if (!(teamId > 0) || !user?.id) return;
+    setSavingNickname(true);
+    const ok = await chatsDB.setTeamChatNickname(teamId, user.id, chatNickname);
+    setSavingNickname(false);
+
+    if (!ok) {
+      Alert.alert('Errore', 'Impossibile salvare il nickname.');
+      return;
+    }
+
+    const labels = await chatsDB.getSenderLabels(chat?.id || 0);
+    setSenderLabels(labels);
+    setNicknameModalVisible(false);
+  };
 
   const chatItems = useMemo(() => {
     const items: Array<
@@ -205,7 +214,7 @@ export default function MisterChatScreen() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      keyboardVerticalOffset={0}
     >
       <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
         {/* Header */}
@@ -218,67 +227,70 @@ export default function MisterChatScreen() {
             {safePlayerName}
           </Text>
 
-          <View style={{ width: 32 }} />
+          <TouchableOpacity style={styles.nicknameBtn} onPress={openNicknameModal} hitSlop={8}>
+            <PencilLine size={16} color="#1d4ed8" />
+          </TouchableOpacity>
         </View>
 
         {/* Messages List */}
-        {messagesLoading && messages.length === 0 ? (
-          <View style={styles.loaderContainer}>
-            <ActivityIndicator size="large" color="#2e70b7ff" />
-          </View>
-        ) : (
-          <FlatList
-            ref={flatListRef}
-            data={chatItems}
-            keyExtractor={(item) => item.key}
-            renderItem={({ item }) => {
-              if (item.type === 'date') {
-                return (
-                  <View style={styles.dateSeparatorWrap}>
-                    <Text style={styles.dateSeparatorText}>{item.label}</Text>
-                  </View>
-                );
-              }
-
-              const msg = item.message;
-              const isCurrentUser = msg.sender_id === user?.id;
-              const senderLabel = isCurrentUser
-                ? 'Tu'
-                : (senderLabels[msg.sender_id] || 'Giocatore');
-
+        <FlatList
+          ref={flatListRef}
+          data={chatItems}
+          keyExtractor={(item) => item.key}
+          renderItem={({ item }) => {
+            if (item.type === 'date') {
               return (
-                <TouchableOpacity
-                  activeOpacity={isCurrentUser ? 0.8 : 1}
-                  disabled={!isCurrentUser}
-                  onLongPress={() => handleDeleteMessage(msg.id)}
-                  style={[styles.messageBubble, isCurrentUser && styles.messageBubbleOwn]}
-                >
-                  <Text style={[styles.senderName, isCurrentUser && styles.senderNameOwn]}>
-                    {senderLabel}
-                  </Text>
-                  <Text style={[styles.messageText, isCurrentUser && styles.messageTextOwn]}>
-                    {msg.text}
-                  </Text>
-                  <Text style={[styles.messageTime, isCurrentUser && styles.messageTimeOwn]}>
-                    {new Date(msg.created_at).toLocaleTimeString('it-IT', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </Text>
-                </TouchableOpacity>
+                <View style={styles.dateSeparatorWrap}>
+                  <Text style={styles.dateSeparatorText}>{item.label}</Text>
+                </View>
               );
-            }}
-            contentContainerStyle={styles.messagesContainer}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>Nessun messaggio. Inizia la conversazione!</Text>
-              </View>
             }
-          />
-        )}
+
+            const msg = item.message;
+            const isCurrentUser = msg.sender_id === user?.id;
+            const senderLabel = isCurrentUser
+              ? 'Tu'
+              : (senderLabels[msg.sender_id] || 'Giocatore');
+
+            return (
+              <TouchableOpacity
+                activeOpacity={isCurrentUser ? 0.8 : 1}
+                disabled={!isCurrentUser}
+                onLongPress={() => handleDeleteMessage(msg.id)}
+                style={[styles.messageBubble, isCurrentUser && styles.messageBubbleOwn]}
+              >
+                <Text style={[styles.senderName, isCurrentUser && styles.senderNameOwn]}>
+                  {senderLabel}
+                </Text>
+                <Text style={[styles.messageText, isCurrentUser && styles.messageTextOwn]}>
+                  {msg.text}
+                </Text>
+                <Text style={[styles.messageTime, isCurrentUser && styles.messageTimeOwn]}>
+                  {new Date(msg.created_at).toLocaleTimeString('it-IT', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </Text>
+              </TouchableOpacity>
+            );
+          }}
+          contentContainerStyle={styles.messagesContainer}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <MessageCircle size={40} color="#d1d5db" />
+              <Text style={styles.emptyText}>Nessun messaggio</Text>
+              <Text style={styles.emptySubtext}>Scrivi qualcosa per iniziare!</Text>
+            </View>
+          }
+        />
 
         {/* Input */}
-        <View style={[styles.inputContainer, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+        <View
+          style={[
+            styles.inputContainer,
+            { paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 8) },
+          ]}
+        >
           <TextInput
             style={styles.input}
             placeholder="Scrivi un messaggio..."
@@ -302,6 +314,37 @@ export default function MisterChatScreen() {
           </TouchableOpacity>
         </View>
       </SafeAreaView>
+
+      <Modal
+        visible={nicknameModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeNicknameModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Nickname chat</Text>
+            <Text style={styles.modalSubtitle}>Solo per questa squadra. Non cambia il profilo.</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={chatNickname}
+              onChangeText={setChatNickname}
+              placeholder="Es. Mister 'Cognome'"
+              autoCapitalize="none"
+              autoCorrect={false}
+              maxLength={30}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={closeNicknameModal} disabled={savingNickname}>
+                <Text style={styles.modalCancelText}>Annulla</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalSaveBtn} onPress={saveNickname} disabled={savingNickname}>
+                <Text style={styles.modalSaveText}>{savingNickname ? 'Salvo...' : 'Salva'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -338,6 +381,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ffffff',
   },
+  nicknameBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#dbeafe',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   loaderContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -351,10 +402,16 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 8,
   },
   emptyText: {
-    fontSize: 14,
+    fontSize: 16,
+    fontWeight: '600',
     color: '#9ca3af',
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#d1d5db',
   },
   messageBubble: {
     maxWidth: '80%',
@@ -392,6 +449,72 @@ const styles = StyleSheet.create({
   },
   messageTimeOwn: {
     color: 'rgba(255,255,255,0.7)',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 18,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: '#6b7280',
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: '#1f2937',
+    backgroundColor: '#f9fafb',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+  },
+  modalCancelText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  modalSaveBtn: {
+    flex: 1,
+    backgroundColor: '#2563eb',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  modalSaveText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#ffffff',
   },
   dateSeparatorWrap: {
     alignItems: 'center',

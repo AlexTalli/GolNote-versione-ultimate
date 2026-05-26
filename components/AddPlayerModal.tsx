@@ -11,6 +11,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { X } from 'lucide-react-native';
+import { SPORT_POSITIONS, normalizeSport } from '@/utils/sports';
 
 type TeamLite = { id: number; name: string; color?: string };
 
@@ -18,6 +19,7 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   onSave: (playerData: { name?: string; surname?: string; position?: string; team_id?: number }) => void | Promise<void>;
+  teamSport?: string;
   /** Se passi presetTeamId, la squadra è bloccata e non mostri la selezione */
   presetTeamId?: number;
   /** Se NON passi presetTeamId puoi passare una lista di squadre selezionabili */
@@ -26,12 +28,13 @@ type Props = {
   editPlayer?: { id: number; name: string; surname: string; position: string };
 };
 
-const positions = ['Portiere', 'Difensore', 'Centrocampista', 'Attaccante'];
+export function AddPlayerModal({ visible, onClose, onSave, teamSport, presetTeamId, teams = [], editPlayer }: Props) {
+  const normalizedSport = useMemo(() => normalizeSport(teamSport), [teamSport]);
+  const positions = useMemo(() => SPORT_POSITIONS[normalizedSport], [normalizedSport]);
 
-export function AddPlayerModal({ visible, onClose, onSave, presetTeamId, teams = [], editPlayer }: Props) {
   const [name, setName] = useState('');
   const [surname, setSurname] = useState('');
-  const [selectedPosition, setSelectedPosition] = useState(positions[0]);
+  const [selectedPosition, setSelectedPosition] = useState(() => positions[0]);
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -43,6 +46,12 @@ export function AddPlayerModal({ visible, onClose, onSave, presetTeamId, teams =
       setSelectedPosition(editPlayer.position);
     }
   }, [visible, editPlayer]);
+
+  useEffect(() => {
+    if (!positions.includes(selectedPosition)) {
+      setSelectedPosition(positions[0]);
+    }
+  }, [positions, selectedPosition]);
 
   const isPreset = typeof presetTeamId === 'number' && presetTeamId > 0;
 

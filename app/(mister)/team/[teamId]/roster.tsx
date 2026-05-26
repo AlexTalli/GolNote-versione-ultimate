@@ -8,7 +8,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { ArrowLeft, Plus } from 'lucide-react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 
@@ -16,14 +16,8 @@ import { useDatabase, usePlayers } from '@/hooks/useDatabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { PlayerCard } from '@/components/PlayerCard';
 import { AddPlayerModal } from '@/components/AddPlayerModal';
-import type { Player } from '@/database/database.supabase';
-
-const POSITION_ORDER: Record<string, number> = {
-  portiere: 0,
-  difensore: 1,
-  centrocampista: 2,
-  attaccante: 3,
-};
+import { teamsDB, type Player } from '@/database/database.supabase';
+import { normalizeSport, SPORT_POSITIONS } from '@/utils/sports';
 
 export default function TeamRosterScreen() {
   const insets = useSafeAreaInsets();
@@ -60,6 +54,22 @@ export default function TeamRosterScreen() {
   const [editingPlayerId, setEditingPlayerId] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [sortBy, setSortBy] = useState<'surname' | 'position'>('position');
+  const [teamSport, setTeamSport] = useState<string>('calcio');
+
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      if (!(teamId > 0)) return;
+      const team = await teamsDB.getById(teamId);
+      if (!mounted) return;
+      setTeamSport(normalizeSport(team?.sport));
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [teamId]);
 
   const handleAddPlayer = useCallback(
     async (playerData: { name?: string; surname?: string; position?: string; team_id?: number }) => {
@@ -120,10 +130,16 @@ export default function TeamRosterScreen() {
   );
 
   const sortedPlayers = useMemo(() => {
+    const positions = SPORT_POSITIONS[normalizeSport(teamSport)];
+    const positionOrder = positions.reduce<Record<string, number>>((acc, position, index) => {
+      acc[position.toLowerCase()] = index;
+      return acc;
+    }, {});
+
     return [...players].sort((a, b) => {
       if (sortBy === 'position') {
-        const posA = POSITION_ORDER[a.position?.toLowerCase()] ?? 99;
-        const posB = POSITION_ORDER[b.position?.toLowerCase()] ?? 99;
+        const posA = positionOrder[a.position?.toLowerCase()] ?? 99;
+        const posB = positionOrder[b.position?.toLowerCase()] ?? 99;
         if (posA !== posB) return posA - posB;
         return a.name.localeCompare(b.name, 'it', { sensitivity: 'base' });
       }
@@ -132,7 +148,7 @@ export default function TeamRosterScreen() {
       const surnameB = b.surname || b.name.split(' ').pop() || b.name;
       return surnameA.localeCompare(surnameB, 'it', { sensitivity: 'base' });
     });
-  }, [players, sortBy]);
+  }, [players, sortBy, teamSport]);
 
   if (!user || user.role !== 'mister') {
     return (
@@ -231,6 +247,7 @@ export default function TeamRosterScreen() {
           setEditingPlayerId(null);
         }}
         onSave={editingPlayerId === null ? handleAddPlayer : handleEditPlayer}
+        teamSport={teamSport}
         presetTeamId={teamId}
         editPlayer={editingPlayerId !== null ? players.find(p => p.id === editingPlayerId) : undefined}
       />

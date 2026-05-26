@@ -9,6 +9,7 @@ import {
   FlatList,
   TextInput,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   ActivityIndicator,
   Alert,
@@ -18,7 +19,7 @@ import { usePlayerChat, useChatMessages } from '@/hooks/useDatabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRole } from '@/contexts/RoleContext';
 import { playersDB } from '@/database/database.supabase';
-import { supabase } from '@/lib/supabase';
+import { chatsDB } from '@/database/database.supabase';
 
 export default function PlayerChatScreen() {
   const insets = useSafeAreaInsets();
@@ -30,6 +31,7 @@ export default function PlayerChatScreen() {
   const [sendingMessage, setSendingMessage] = useState(false);
   const [playerLoading, setPlayerLoading] = useState(true);
   const [senderLabels, setSenderLabels] = useState<Record<string, string>>({});
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   // State for loaded player data
   const [teamId, setTeamId] = useState<number>(-1);
@@ -78,6 +80,19 @@ export default function PlayerChatScreen() {
     }
   }, [messages]);
 
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   // Load sender labels for this chat: 1° Mister, 2° Mister, ... , Giocatore
   useEffect(() => {
     (async () => {
@@ -87,58 +102,14 @@ export default function PlayerChatScreen() {
       }
 
       try {
-        const labels: Record<string, string> = {};
-
-        const { data: chatRow } = await supabase
-          .from('chats')
-          .select('team_id, teams(owner_user_id)')
-          .eq('id', chat.id)
-          .single();
-
-        const teamIdForChat = Number((chatRow as any)?.team_id || 0);
-        const ownerUserId = (chatRow as any)?.teams?.owner_user_id as string | undefined;
-
-        const orderedMisterIds: string[] = [];
-        if (ownerUserId) orderedMisterIds.push(ownerUserId);
-
-        if (teamIdForChat > 0) {
-          const { data: delegatedRows } = await supabase
-            .from('team_misters')
-            .select('user_id, created_at')
-            .eq('team_id', teamIdForChat)
-            .order('created_at', { ascending: true });
-
-          (delegatedRows || []).forEach((r: any) => {
-            const uid = String(r.user_id || '');
-            if (uid && !orderedMisterIds.includes(uid)) {
-              orderedMisterIds.push(uid);
-            }
-          });
-        }
-
-        // Fallback robusto: se i delegati non arrivano, li inferiamo dai messaggi
-        // (tutti i sender diversi dal player corrente e non già presenti)
-        const inferredMisters = messages
-          .filter((m) => m.sender_id && m.sender_id !== user?.id)
-          .map((m) => String(m.sender_id));
-
-        inferredMisters.forEach((uid) => {
-          if (!orderedMisterIds.includes(uid)) {
-            orderedMisterIds.push(uid);
-          }
-        });
-
-        orderedMisterIds.forEach((uid, idx) => {
-          labels[uid] = `${idx + 1}° Mister`;
-        });
-
+        const labels = await chatsDB.getSenderLabels(chat.id);
         setSenderLabels(labels);
       } catch (e) {
         console.error('[PlayerChatScreen] load sender labels error:', e);
         setSenderLabels({});
       }
     })();
-  }, [chat?.id, messages, user?.id]);
+  }, [chat?.id]);
 
   const chatItems = useMemo(() => {
     const items: Array<
@@ -237,7 +208,7 @@ export default function PlayerChatScreen() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      keyboardVerticalOffset={0}
     >
       <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
         {/* Header */}
@@ -254,63 +225,62 @@ export default function PlayerChatScreen() {
         </View>
 
         {/* Messages List */}
-        {messagesLoading && messages.length === 0 ? (
-          <View style={styles.loaderContainer}>
-            <ActivityIndicator size="large" color="#2e70b7ff" />
-          </View>
-        ) : (
-          <FlatList
-            ref={flatListRef}
-            data={chatItems}
-            keyExtractor={(item) => item.key}
-            renderItem={({ item }) => {
-              if (item.type === 'date') {
-                return (
-                  <View style={styles.dateSeparatorWrap}>
-                    <Text style={styles.dateSeparatorText}>{item.label}</Text>
-                  </View>
-                );
-              }
-
-              const msg = item.message;
-              const isCurrentUser = msg.sender_id === user?.id;
-              const senderLabel = isCurrentUser ? 'Tu' : (senderLabels[msg.sender_id] || 'Mister');
-
+        <FlatList
+          ref={flatListRef}
+          data={chatItems}
+          keyExtractor={(item) => item.key}
+          renderItem={({ item }) => {
+            if (item.type === 'date') {
               return (
-                <TouchableOpacity
-                  activeOpacity={isCurrentUser ? 0.8 : 1}
-                  disabled={!isCurrentUser}
-                  onLongPress={() => handleDeleteMessage(msg.id)}
-                  style={[styles.messageBubble, isCurrentUser && styles.messageBubbleOwn]}
-                >
-                  <Text style={[styles.senderName, isCurrentUser && styles.senderNameOwn]}>
-                    {senderLabel}
-                  </Text>
-                  <Text style={[styles.messageText, isCurrentUser && styles.messageTextOwn]}>
-                    {msg.text}
-                  </Text>
-                  <Text style={[styles.messageTime, isCurrentUser && styles.messageTimeOwn]}>
-                    {new Date(msg.created_at).toLocaleTimeString('it-IT', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </Text>
-                </TouchableOpacity>
+                <View style={styles.dateSeparatorWrap}>
+                  <Text style={styles.dateSeparatorText}>{item.label}</Text>
+                </View>
               );
-            }}
-            contentContainerStyle={styles.messagesContainer}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <MessageCircle size={40} color="#d1d5db" />
-                <Text style={styles.emptyText}>Nessun messaggio</Text>
-                <Text style={styles.emptySubtext}>Scrivi qualcosa al tuo mister per iniziare!</Text>
-              </View>
             }
-          />
-        )}
+
+            const msg = item.message;
+            const isCurrentUser = msg.sender_id === user?.id;
+            const senderLabel = isCurrentUser ? 'Tu' : (senderLabels[msg.sender_id] || 'Mister');
+
+            return (
+              <TouchableOpacity
+                activeOpacity={isCurrentUser ? 0.8 : 1}
+                disabled={!isCurrentUser}
+                onLongPress={() => handleDeleteMessage(msg.id)}
+                style={[styles.messageBubble, isCurrentUser && styles.messageBubbleOwn]}
+              >
+                <Text style={[styles.senderName, isCurrentUser && styles.senderNameOwn]}>
+                  {senderLabel}
+                </Text>
+                <Text style={[styles.messageText, isCurrentUser && styles.messageTextOwn]}>
+                  {msg.text}
+                </Text>
+                <Text style={[styles.messageTime, isCurrentUser && styles.messageTimeOwn]}>
+                  {new Date(msg.created_at).toLocaleTimeString('it-IT', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </Text>
+              </TouchableOpacity>
+            );
+          }}
+          contentContainerStyle={styles.messagesContainer}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <MessageCircle size={40} color="#d1d5db" />
+              <Text style={styles.emptyText}>Nessun messaggio</Text>
+              <Text style={styles.emptySubtext}>Scrivi qualcosa per iniziare!</Text>
+            </View>
+          }
+        />
 
         {/* Input */}
-        <View style={[styles.inputContainer, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+        <View
+          style={[
+            styles.inputContainer,
+            { paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 8) },
+          ]}
+        >
           <TextInput
             style={styles.input}
             placeholder="Scrivi un messaggio..."

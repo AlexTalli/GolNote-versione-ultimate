@@ -48,6 +48,7 @@ export const useDatabase = () => {
 type TeamInput = {
   name: string;
   description: string;
+  sport: string;
   season_year: string;
   category: string;
   color: string;

@@ -46,6 +46,7 @@ export default function Teams() {
     async (teamData: {
       name?: string;
       description?: string;
+      sport?: string;
       season_year?: string;
       category?: string;
       color?: string;
@@ -58,6 +59,7 @@ export default function Teams() {
       const ok = await addTeam({
         name: teamData.name,
         description: teamData.description || '',
+        sport: teamData.sport || 'calcio',
         season_year: teamData.season_year || '',
         category: teamData.category || '',
         color: teamData.color || '#22c55e',
@@ -84,6 +86,7 @@ export default function Teams() {
     async (teamData: {
       name?: string;
       description?: string;
+      sport?: string;
       season_year?: string;
       category?: string;
       color?: string;
@@ -96,6 +99,7 @@ export default function Teams() {
       const ok = await updateTeam(editingTeamId, {
         name: teamData.name,
         description: teamData.description,
+        sport: teamData.sport,
         season_year: teamData.season_year,
         category: teamData.category,
         color: teamData.color,

@@ -383,7 +383,7 @@ export default function MisterSettings() {
           <TouchableOpacity style={styles.option}>
             <Info size={20} color="#6b7280" />
             <View style={styles.optionContent}>
-              <Text style={styles.optionTitle}>GolNote – Cosa posso fare?</Text>
+              <Text style={styles.optionTitle}>SportNote – Cosa posso fare?</Text>
               <Text style={styles.optionDescription}>
                 • Crea e gestisci le tue squadre{"\n"}
                 • Aggiungi i giocatori e assegna le multe{"\n"}

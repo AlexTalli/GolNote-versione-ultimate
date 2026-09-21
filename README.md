@@ -1,4 +1,4 @@
-# App LAM - GolNote
+# SportNote
 Un'app Expo React Native per la gestione delle multe in team sportivi, con ruoli separati per mister e giocatori. Utilizza un database SQLite locale per la persistenza dei dati.
 
 ## Estensione backend (Supabase)

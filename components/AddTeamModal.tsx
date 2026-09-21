@@ -341,7 +341,7 @@ export function AddTeamModal({ visible, onClose, onSave, editTeam }: AddTeamModa
                 style={styles.input}
                 value={name}
                 onChangeText={setName}
-                placeholder="Es. ASD GolNote"
+                placeholder="Es. ASD SportNote"
                 autoCapitalize="words"
               />
             </View>

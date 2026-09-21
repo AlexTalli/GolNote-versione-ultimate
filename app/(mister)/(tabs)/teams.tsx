@@ -9,12 +9,11 @@ import {
 } from 'react-native';
 import { useState, useCallback, useMemo } from 'react';
 import { Plus, Link2 } from 'lucide-react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { TeamCard } from '@/components/TeamCard';
 import { AddTeamModal } from '@/components/AddTeamModal';
 import { useDatabase, useTeams } from '@/hooks/useDatabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 
 export default function Teams() {
   const { isInitialized } = useDatabase();

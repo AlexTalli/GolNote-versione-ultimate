@@ -16,11 +16,9 @@ import {
   ActivityIndicator,
   Modal,
   TextInput,
-  Image,
-  ScrollView as RNScrollView,
   RefreshControl,
 } from 'react-native';
-import { Download, Bell, Trash2, Info, LogOut, Edit } from 'lucide-react-native';
+import { Bell, Trash2, Info, LogOut, Edit } from 'lucide-react-native';
 import { router } from 'expo-router';
 
 import { useAuth } from '@/contexts/AuthContext';
@@ -33,16 +31,8 @@ import {
   usersDB,
 } from '@/database/database.supabase';
 
-// Export utilities
-import { exportMisterFinesXLSX } from '@/utils/exportToXlsx';
-import type { MisterFinesExportSort } from '@/utils/exportToXlsx';
-
 // hook per caricare le squadre del mister
 import { useTeams } from '@/hooks/useDatabase';
-
-// filesystem legacy + sharing
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
 
 /* ========== COMPONENTE ========== */
 
@@ -54,15 +44,12 @@ export default function MisterSettings() {
 
   // Stati per le operazioni asincrone
   const [enablingWeekly, setEnablingWeekly] = useState(false);
-  const [exporting, setExporting] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
-  const [exportPickerVisible, setExportPickerVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [nicknameModalVisible, setNicknameModalVisible] = useState(false);
   const [newDisplayNickname, setNewDisplayNickname] = useState('');
   const [savingNickname, setSavingNickname] = useState(false);
-  const [exportSortBy, setExportSortBy] = useState<MisterFinesExportSort>('surname');
 
   // Stati per le notifiche settimanali
   const [weeklyEnabled, setWeeklyEnabled] = useState(false);
@@ -134,44 +121,6 @@ export default function MisterSettings() {
       setRefreshing(false);
     }
   }, [refreshTeams, user?.id]);
-
-  /* ========== ESPORTAZIONE EXCEL ========== */
-
-  // Apre il picker per scegliere quale squadra esportare
-  const handleExportData = () => {
-    if (!user?.id) {
-      Alert.alert('Errore', 'Utente non valido.');
-      return;
-    }
-    if (!hasTeams) {
-      Alert.alert(
-        'Nessuna squadra',
-        'Crea almeno una squadra prima di esportare le multe.'
-      );
-      return;
-    }
-    setExportPickerVisible(true);
-  };
-
-  // Esegue l'esportazione effettiva dopo la scelta della squadra
-  const doExport = async (teamId?: number, teamName?: string) => {
-    if (!user?.id) {
-      Alert.alert('Errore', 'Utente non valido.');
-      return;
-    }
-
-    setExportPickerVisible(false);
-    setExporting(true);
-
-    try {
-      await exportMisterFinesXLSX(user.id, teamId, teamName ?? 'Squadra', exportSortBy);
-    } catch (error) {
-      console.error('Error exporting fines:', error);
-      Alert.alert('Errore', 'Impossibile esportare il file Excel.');
-    } finally {
-      setExporting(false);
-    }
-  };
 
   /* ============= CLEAR DATA (dati) ============= */
   const handleClearData = () => {
@@ -312,29 +261,6 @@ export default function MisterSettings() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {/* Sezione esportazione dati */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Esportazione Dati</Text>
-          <TouchableOpacity
-            style={styles.option}
-            onPress={handleExportData}
-            disabled={exporting || !hasTeams}
-          >
-            <Download size={20} color="#22c55e" />
-            <View style={styles.optionContent}>
-              <Text style={styles.optionTitle}>
-                {exporting ? 'Esportazione in corso…' : 'Esporta in Excel'}
-              </Text>
-              <Text style={styles.optionDescription}>
-                {hasTeams
-                  ? 'Scegli una squadra (o tutte) e scarica le multe in Excel'
-                  : 'Crea almeno una squadra per poter esportare i dati'}
-              </Text>
-            </View>
-            {exporting && <ActivityIndicator size="small" color="#22c55e" />}
-          </TouchableOpacity>
-        </View>
-
         {/* ============= NOTIFICHE ============= */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Notifiche</Text>
@@ -522,100 +448,6 @@ export default function MisterSettings() {
         </View>
       </Modal>
 
-      {/* ============= SCELTA SQUADRA - ESPORTAZIONE EXCEL ============= */}
-      <Modal
-        visible={exportPickerVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setExportPickerVisible(false)}
-      >
-        <View style={styles.overlay}>
-          <View style={styles.modal}>
-            <Text style={styles.modalTitle}>Esporta multe in Excel</Text>
-            <Text style={styles.modalSubtitle}>
-              Seleziona ordine e squadra (o tutte le squadre).
-            </Text>
-
-            <View style={styles.exportSortWrap}>
-              <Text style={styles.exportSortLabel}>Ordina export per:</Text>
-              <View style={styles.exportSortButtons}>
-                <TouchableOpacity
-                  style={[styles.exportSortBtn, exportSortBy === 'surname' && styles.exportSortBtnActive]}
-                  onPress={() => setExportSortBy('surname')}
-                >
-                  <Text style={[styles.exportSortBtnText, exportSortBy === 'surname' && styles.exportSortBtnTextActive]}>
-                    Cognome giocatore
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.exportSortBtn, exportSortBy === 'payment_status' && styles.exportSortBtnActive]}
-                  onPress={() => setExportSortBy('payment_status')}
-                >
-                  <Text style={[styles.exportSortBtnText, exportSortBy === 'payment_status' && styles.exportSortBtnTextActive]}>
-                    Non pagate → pagate
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <RNScrollView
-              style={{ maxHeight: 260, marginTop: 12 }}
-              contentContainerStyle={{ paddingBottom: 8 }}
-            >
-              <TouchableOpacity
-                style={[styles.teamOptionCard, styles.teamOptionAll]}
-                onPress={() => {
-                  console.log('⚡ TAPPED ALL TEAMS');
-                  doExport(undefined, undefined);
-                }}
-              >
-                <Text style={styles.teamOptionTitle}>Tutte le squadre</Text>
-                <Text style={styles.teamOptionSubtitle}>Esporta un unico file con tutte le squadre</Text>
-              </TouchableOpacity>
-
-              {(teams ?? []).map((t: any) => (
-                <TouchableOpacity
-                  key={String(t.id)}
-                  style={styles.teamOptionCard}
-                  onPress={() => {
-                    console.log('⚡ TAPPED TEAM', t.id, t.name);
-                    doExport(t.id, t.name);
-                  }}
-                >
-                  <View style={styles.teamOptionLeft}>
-                    {t.logo_uri ? (
-                      <Image source={{ uri: t.logo_uri }} style={styles.teamOptionLogo} />
-                    ) : (
-                      <View style={[styles.teamOptionLogoFallback, { backgroundColor: t.color || '#22c55e' }]} />
-                    )}
-                  </View>
-
-                  <View style={styles.teamOptionContent}>
-                    <Text style={styles.teamOptionTitle} numberOfLines={1}>{t.name}</Text>
-                    {(t.season_year || t.category) ? (
-                      <Text style={styles.teamOptionSubtitle} numberOfLines={1}>
-                        {[t.season_year, t.category].filter(Boolean).join(' • ')}
-                      </Text>
-                    ) : (
-                      <Text style={styles.teamOptionSubtitle} numberOfLines={1}>Esporta solo questa squadra</Text>
-                    )}
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </RNScrollView>
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.modalCancel}
-                onPress={() => setExportPickerVisible(false)}
-              >
-                <Text style={styles.modalCancelText}>Annulla</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </>
   );
 }

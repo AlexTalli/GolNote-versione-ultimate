@@ -1,4 +1,4 @@
-import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useState, useMemo, useEffect } from 'react';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Eye, EyeOff } from 'lucide-react-native';
@@ -38,6 +38,13 @@ export default function Register() {
       return;
     }
 
+    if (password.length < 6) {
+      const message = 'La password deve contenere almeno 6 caratteri.';
+      setErr(message);
+      Alert.alert('Password troppo corta', message);
+      return;
+    }
+
     const e = await register(nickname.trim(), password, role);
     if (e) {
       setErr(e);
@@ -49,11 +56,6 @@ export default function Register() {
 
     router.replace(role === 'mister' ? '/(mister)/(tabs)' : '/(player)/join-team');
   };
-
-    // Blocca orientamento in verticale all'avvio
-    useEffect(() => {
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
-    }, []);
 
   // Se ruolo non valido, mostra messaggio e bottone per tornare indietro
   if (role !== 'mister' && role !== 'player') {

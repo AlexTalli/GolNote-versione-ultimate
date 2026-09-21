@@ -34,7 +34,7 @@ export default function RoleSelection() {
     <View style={styles.container}>
       {/* Header con titolo app */}
       <View style={styles.header}>
-        <Text style={styles.title}>GolNote</Text>
+        <Text style={styles.title}>SportNote</Text>
         <Text style={styles.subtitle}>Gestionale Squadre Sportive</Text>
       </View>
 

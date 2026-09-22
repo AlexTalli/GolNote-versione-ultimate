@@ -7,6 +7,7 @@ import {
   ScrollView,
   RefreshControl,
   TouchableOpacity,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft } from 'lucide-react-native';
@@ -29,6 +30,7 @@ export default function PlayerTeamRosterScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sortBy, setSortBy] = useState<'surname' | 'position'>('surname');
+  const [query, setQuery] = useState('');
 
   const teamName = useMemo(
     () => String(teamNameParam || players[0]?.team_name || 'Rosa squadra'),
@@ -82,6 +84,17 @@ export default function PlayerTeamRosterScreen() {
     });
   }, [players, sortBy]);
 
+  const filteredPlayers = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return sortedPlayers;
+
+    return sortedPlayers.filter((player) => {
+      const fullName = `${player.name ?? ''} ${player.surname ?? ''}`.toLowerCase();
+      const position = (player.position ?? '').toLowerCase();
+      return fullName.includes(normalizedQuery) || position.includes(normalizedQuery);
+    });
+  }, [query, sortedPlayers]);
+
   if (!(teamId > 0)) {
     return (
       <SafeAreaView style={[styles.container, styles.center]}>
@@ -105,7 +118,7 @@ export default function PlayerTeamRosterScreen() {
           <ArrowLeft size={20} color="#ffffff" />
         </TouchableOpacity>
         <Text style={styles.title} numberOfLines={1}>
-          {teamName}
+          Rosa · {teamName}
         </Text>
       </View>
 
@@ -114,6 +127,17 @@ export default function PlayerTeamRosterScreen() {
         contentContainerStyle={{ paddingBottom: 24 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
+        <View style={styles.searchBar}>
+          <TextInput
+            style={styles.searchInput}
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Cerca giocatore..."
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
+
         <View style={styles.sortBar}>
           <Text style={styles.sortLabel}>Ordina per:</Text>
           <View style={styles.sortButtons}>
@@ -140,8 +164,12 @@ export default function PlayerTeamRosterScreen() {
           <View style={styles.emptyWrap}>
             <Text style={styles.emptyText}>Nessun giocatore.</Text>
           </View>
+        ) : filteredPlayers.length === 0 ? (
+          <View style={styles.emptyWrap}>
+            <Text style={styles.emptyText}>Nessun giocatore trovato.</Text>
+          </View>
         ) : (
-          sortedPlayers.map((p, index) => (
+          filteredPlayers.map((p, index) => (
             <PlayerCard
               key={String(p.id)}
               player={p}
@@ -186,6 +214,19 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
     paddingTop: 16,
+  },
+  searchBar: {
+    marginBottom: 12,
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 10,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#111827',
   },
   sortBar: {
     flexDirection: 'row',

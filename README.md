@@ -1,8 +1,8 @@
 # SportNote
-Un'app Expo React Native per la gestione delle multe in team sportivi, con ruoli separati per mister e giocatori. Utilizza un database SQLite locale per la persistenza dei dati.
+Un'app Expo React Native per la gestione delle multe in team sportivi, con ruoli separati per mister e giocatori. Attualmente usa Supabase come persistenza principale per dati condivisi e autenticazione.
 
-## Estensione backend (Supabase)
-È stato aggiunto il primo step per passare a database condiviso multi-dispositivo.
+## Backend (Supabase)
+L'app usa Supabase come backend principale.
 
 - Client Supabase: [backend/supabase.ts](backend/supabase.ts)
 - Schema SQL + RLS: [backend/supabase-schema.sql](backend/supabase-schema.sql)

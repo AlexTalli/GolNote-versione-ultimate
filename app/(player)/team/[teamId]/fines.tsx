@@ -7,6 +7,7 @@ import {
   ScrollView,
   RefreshControl,
   TouchableOpacity,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft } from 'lucide-react-native';
@@ -28,6 +29,8 @@ export default function PlayerTeamFinesScreen() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [sortBy, setSortBy] = useState<'surname' | 'position'>('surname');
+  const [query, setQuery] = useState('');
 
   const teamName = useMemo(
     () => String(teamNameParam || players[0]?.team_name || 'Multe squadra'),
@@ -59,6 +62,39 @@ export default function PlayerTeamFinesScreen() {
     setRefreshing(false);
   }, [load]);
 
+  const POSITION_ORDER: Record<string, number> = {
+    portiere: 0,
+    difensore: 1,
+    centrocampista: 2,
+    attaccante: 3,
+  };
+
+  const sortedPlayers = useMemo(() => {
+    return [...players].sort((a, b) => {
+      if (sortBy === 'position') {
+        const posA = POSITION_ORDER[a.position?.toLowerCase()] ?? 99;
+        const posB = POSITION_ORDER[b.position?.toLowerCase()] ?? 99;
+        if (posA !== posB) return posA - posB;
+        return a.name.localeCompare(b.name, 'it', { sensitivity: 'base' });
+      }
+
+      const surnameA = a.surname || a.name.split(' ').pop() || a.name;
+      const surnameB = b.surname || b.name.split(' ').pop() || b.name;
+      return surnameA.localeCompare(surnameB, 'it', { sensitivity: 'base' });
+    });
+  }, [players, sortBy]);
+
+  const filteredPlayers = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return sortedPlayers;
+
+    return sortedPlayers.filter((player) => {
+      const fullName = `${player.name ?? ''} ${player.surname ?? ''}`.toLowerCase();
+      const position = (player.position ?? '').toLowerCase();
+      return fullName.includes(normalizedQuery) || position.includes(normalizedQuery);
+    });
+  }, [query, sortedPlayers]);
+
   if (!(teamId > 0)) {
     return (
       <SafeAreaView style={[styles.container, styles.center]}>
@@ -82,7 +118,7 @@ export default function PlayerTeamFinesScreen() {
           <ArrowLeft size={20} color="#ffffff" />
         </TouchableOpacity>
         <Text style={styles.title} numberOfLines={1}>
-          {teamName}
+          Multe · {teamName}
         </Text>
       </View>
 
@@ -93,12 +129,49 @@ export default function PlayerTeamFinesScreen() {
       >
         <Text style={styles.sectionInfo}>Tocca un giocatore per vedere il dettaglio multe.</Text>
 
+        <View style={styles.searchBar}>
+          <TextInput
+            style={styles.searchInput}
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Cerca giocatore..."
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
+
+        <View style={styles.sortBar}>
+          <Text style={styles.sortLabel}>Ordina per:</Text>
+          <View style={styles.sortButtons}>
+            <TouchableOpacity
+              style={[styles.sortBtn, sortBy === 'position' && styles.sortBtnActive]}
+              onPress={() => setSortBy('position')}
+            >
+              <Text style={[styles.sortBtnText, sortBy === 'position' && styles.sortBtnTextActive]}>
+                Ruolo
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.sortBtn, sortBy === 'surname' && styles.sortBtnActive]}
+              onPress={() => setSortBy('surname')}
+            >
+              <Text style={[styles.sortBtnText, sortBy === 'surname' && styles.sortBtnTextActive]}>
+                Cognome
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {players.length === 0 ? (
           <View style={styles.emptyWrap}>
             <Text style={styles.emptyText}>Nessun giocatore.</Text>
           </View>
+        ) : filteredPlayers.length === 0 ? (
+          <View style={styles.emptyWrap}>
+            <Text style={styles.emptyText}>Nessun giocatore trovato.</Text>
+          </View>
         ) : (
-          players.map((p, index) => (
+          filteredPlayers.map((p, index) => (
             <PlayerCard
               key={String(p.id)}
               player={p}
@@ -153,6 +226,56 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6b7280',
     marginBottom: 12,
+  },
+  searchBar: {
+    marginBottom: 12,
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 10,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#111827',
+  },
+  sortBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 4,
+  },
+  sortLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6b7280',
+    marginRight: 12,
+  },
+  sortButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    flex: 1,
+  },
+  sortBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    backgroundColor: '#ffffff',
+  },
+  sortBtnActive: {
+    backgroundColor: '#2e70b7ff',
+    borderColor: '#2e70b7ff',
+  },
+  sortBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  sortBtnTextActive: {
+    color: '#ffffff',
   },
   emptyWrap: {
     paddingVertical: 24,

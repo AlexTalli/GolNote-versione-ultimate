@@ -133,7 +133,6 @@ export default function PlayerTeamScreen() {
             setUser(null);
             setRole(null);
             setPlayerIdentity({ playerId: null });
-            router.dismissAll();
             router.replace('/');
           },
         },
@@ -171,7 +170,7 @@ export default function PlayerTeamScreen() {
       <View style={[s.header, { paddingTop: Math.max(insets.top, 8) }]}>
         {/* Titolo con nome squadra */}
         <Text style={s.title} numberOfLines={1}>
-          {teamName}
+          Squadra · {teamName}
         </Text>
 
         {/* Icona home: torna alla selezione ruolo */}

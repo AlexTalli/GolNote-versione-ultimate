@@ -29,4 +29,4 @@
 
 ## 6) Note integrazione app
 - Client pronto in `backend/supabase.ts`
-- Prossimo step: sostituire progressivamente i metodi in `database/database.ts` con query Supabase + cache SQLite locale
+- L'app usa già Supabase come backend primario; i metodi in `database/database.supabase.ts` sono la sorgente attiva del modello dati

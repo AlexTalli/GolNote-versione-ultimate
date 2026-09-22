@@ -184,7 +184,6 @@ export default function MisterSettings() {
               setUser(null);
               setRole(null);
               setPlayerIdentity({ playerId: null });
-              router.dismissAll();
               router.replace('/');
             } catch (e) {
               console.error('Errore eliminazione account:', e);
@@ -206,7 +205,6 @@ export default function MisterSettings() {
     setUser(null);
     setRole(null);
     setPlayerIdentity({ playerId: null });
-    router.dismissAll();
     router.replace('/');
   };
 

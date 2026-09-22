@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   RefreshControl,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState, useCallback, useMemo } from 'react';
@@ -49,6 +50,7 @@ export default function TeamFinesPlayersScreen() {
 
   const [refreshing, setRefreshing] = useState(false);
   const [sortBy, setSortBy] = useState<'surname' | 'position'>('position');
+  const [query, setQuery] = useState('');
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -70,6 +72,17 @@ export default function TeamFinesPlayersScreen() {
       return surnameA.localeCompare(surnameB, 'it', { sensitivity: 'base' });
     });
   }, [players, sortBy]);
+
+  const filteredPlayers = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return sortedPlayers;
+
+    return sortedPlayers.filter((player) => {
+      const fullName = `${player.name ?? ''} ${player.surname ?? ''}`.toLowerCase();
+      const position = (player.position ?? '').toLowerCase();
+      return fullName.includes(normalizedQuery) || position.includes(normalizedQuery);
+    });
+  }, [query, sortedPlayers]);
 
   if (!user || user.role !== 'mister') {
     return (
@@ -116,6 +129,17 @@ export default function TeamFinesPlayersScreen() {
       >
         <Text style={styles.helperText}>Seleziona un giocatore per vedere o aggiungere multe.</Text>
 
+        <View style={styles.searchBar}>
+          <TextInput
+            style={styles.searchInput}
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Cerca giocatore..."
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
+
         <View style={styles.sortBar}>
           <Text style={styles.sortLabel}>Ordina per:</Text>
           <View style={styles.sortButtons}>
@@ -144,8 +168,12 @@ export default function TeamFinesPlayersScreen() {
               Nessun giocatore disponibile in questa squadra.
             </Text>
           </View>
+        ) : filteredPlayers.length === 0 ? (
+          <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+            <Text style={{ color: '#6b7280' }}>Nessun giocatore trovato.</Text>
+          </View>
         ) : (
-          sortedPlayers.map((player: Player, index: number) => (
+          filteredPlayers.map((player: Player, index: number) => (
             <PlayerCard
               key={String(player.id)}
               player={player}
@@ -204,6 +232,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#4b5563',
     marginBottom: 12,
+  },
+
+  searchBar: {
+    marginBottom: 12,
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 10,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#111827',
   },
 
   sortBar: {

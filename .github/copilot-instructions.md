@@ -2,16 +2,16 @@
 
 - Expo React Native app using Expo Router (file-based routing under `app/`).
 - Purpose: team "multe" (fines) management with two user roles: `mister` and `player`.
-- Local persistent storage is an on-device SQLite DB initialized at runtime (`database/database.ts`).
+- Persistence is backed by Supabase; SQLite is legacy and no longer used as the active app storage layer.
 
 ## High-level architecture
 
 - UI: `app/` — Expo Router layouts and screens. Example entry: `app/_layout.tsx` and `app/index.tsx` (role selection).
 - State & role: `contexts/RoleContext.tsx` provides `useRole()` (role and playerIdentity) used to decide navigation and visibility.
-- Persistence: `database/database.ts` exports a singleton-like DB accessor (via `getDb()` / `initDatabase`) and grouped modules: `teamsDB`, `playersDB`, `finesDB`, `statsDB`.
-- Hooks: `hooks/useDatabase.ts` provides composable hooks (`useTeams`, `usePlayers`, `useFines`, `useDashboardStats`) that call the DB layer and return loading/data/refresh helpers.
+- Persistence: `database/database.ts` re-exports the Supabase implementation in `database/database.supabase.ts`; the app uses `teamsDB`, `playersDB`, `finesDB`, `chatsDB`, and related modules directly against Supabase.
+- Hooks: `hooks/useDatabase.ts` provides composable hooks (`useTeams`, `usePlayers`, `useFines`, `useDashboardStats`) that call the Supabase-backed DB layer and return loading/data/refresh helpers.
 
-Why this structure: UI-only code calls hooks, hooks call a small DB service. Keep UI code out of SQL and use hooks for side-effect management and caching.
+Why this structure: UI-only code calls hooks, hooks call the Supabase data service. Keep UI code out of raw data access and use hooks for side-effect management and caching.
 
 ## Key developer workflows (how to run / build)
 
@@ -40,19 +40,17 @@ Scripts are found in `package.json` — they invoke `expo` commands (note `EXPO_
 - Path alias `@/` is used in imports (e.g. `@/hooks/useDatabase`). Respect `tsconfig.json` baseUrl when adding files.
 - Routing groups: parentheses directories in `app/` define route groups — e.g. `(mister)`, `(player)`. Use the same nested layout pattern when adding screens.
 - Role-first navigation: `app/index.tsx` sets `role` in `RoleContext` and routes via `expo-router` (`router.replace('/(mister)')`). Maintain this flow when changing onboarding.
-- Database initialization must be awaited. `useDatabase()` calls `await initDatabase()` and Root layout (`app/_layout.tsx`) waits on `isInitialized` before rendering app UI. If you add async DB setup steps, follow the same pattern.
-- DB API shape: database functions return primitives or arrays and always handle errors internally (they log and return safe defaults). Hooks expect these semantics and call `refresh` loaders after mutating operations.
+- Supabase is the live backend. Do not reintroduce SQLite as the primary storage mechanism unless a clear migration plan is explicitly approved.
+- DB API shape: Supabase methods return data/error objects and error handling should be done with safe defaults and user-facing alerts where needed. Hooks expect these semantics and call `refresh` loaders after mutating operations.
 
 ## SQL / DB conventions to follow
 
-- Tables: `teams`, `players`, `fines`. When adding fields, update:
-  - `database/database.ts` schema in `initDatabase()`
-  - all SELECT queries in `teamsDB`, `playersDB`, `finesDB`, and `statsDB` that assume column names
-- Use provided helper patterns:
-  - Read single: `db.getFirstAsync<T>(query, params)`
-  - Read many: `db.getAllAsync<T>(query, params)`
-  - Mutate: `db.runAsync(query, params)` and return `lastInsertRowId` when creating
-- No migration framework: schema changes are destructive unless you write a migration path. Prefer adding nullable columns or write a migration step in `initDatabase()`.
+- Data model lives in Supabase tables such as `teams`, `players`, `fines`, `attendance`, and related tables. When adding fields, update:
+  - the Supabase table schema and relevant RPCs/functions
+  - all queries in `database/database.supabase.ts` that assume column names
+  - any hook that reshapes the returned rows for the UI
+- Prefer Supabase query patterns and typed accessors. Do not rely on legacy SQLite helper conventions (`getFirstAsync`, `getAllAsync`, `runAsync`) for new work.
+- For schema changes, prefer additive migration and verify RLS/permissions in Supabase.
 
 ## How screens talk to the DB
 
@@ -61,22 +59,23 @@ Scripts are found in `package.json` — they invoke `expo` commands (note `EXPO_
 
 ## Common pitfalls for code changes
 
-- Don’t forget to await DB initialization. If new code touches `initDatabase()` add any async work there and ensure `useDatabase()` awaits it.
-- When editing SQL, update the corresponding hook query that shapes results for components (e.g., `playersDB.getAll()` also computes `active_fines` and `total_unpaid`).
-- Keep the export names in `database/database.ts` stable (`teamsDB`, `playersDB`, `finesDB`, `statsDB`, `initDatabase`) — hooks import those exact names.
+- Do not reintroduce SQLite initialization flow when working on the current app; the active storage layer is Supabase.
+- When editing SQL, update the corresponding Supabase query or RPC that shapes results for components (e.g., players queries that compute attendance/fine stats).
+- Keep the export names in `database/database.ts` stable as a re-export layer, and make sure the actual implementation is kept in `database/database.supabase.ts`.
 
 ## Files to inspect first when making a change
 
-- `app/_layout.tsx` — app bootstrap and DB init gating
+- `app/_layout.tsx` — app bootstrap and auth/role gating
 - `app/index.tsx` — role selection and navigation
-- `database/database.ts` — schema, queries, DB helpers (primary place to extend persistence)
+- `database/database.supabase.ts` — active schema, queries, and DB helpers
+- `database/database.ts` — compatibility re-export layer
 - `hooks/useDatabase.ts` — hook-side logic, loading/refresh patterns
 - `contexts/RoleContext.tsx` — role management (mister/player)
 - `components/` — reusable presentational components and modals (follow existing prop shapes)
 
 ## Example: Adding a `getTeamById` helper
 
-Follow existing patterns: add a `getFirstAsync` SQL helper in `teamsDB` and return typed result; call it from a new hook or screen and keep the `loading`/`refresh` pattern from `hooks/useDatabase.ts`.
+Follow existing patterns in `database/database.supabase.ts`: add a Supabase query or RPC helper in the relevant module and call it from a hook or screen, keeping the `loading`/`refresh` pattern from `hooks/useDatabase.ts`.
 
 ---
 
